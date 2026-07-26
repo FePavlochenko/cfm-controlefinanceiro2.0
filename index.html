@@ -16,6 +16,7 @@ tailwind.config={theme:{extend:{
 </script>
 <style>
   *{box-sizing:border-box}
+  html{padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);background:#123B2A}
   .valor{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums}
   ::placeholder{font-size:.8rem;color:#9ca3af}
   .nav-ativo{color:#F2A93B!important}
@@ -43,7 +44,7 @@ tailwind.config={theme:{extend:{
   #toast{animation:slidein .3s ease}
   @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
-  <!-- Manifest para PWA -->
+<!-- Manifest para PWA -->
 <link rel="manifest" href="/manifest.json">
 
 <!-- Meta tags iOS -->
@@ -104,7 +105,7 @@ tailwind.config={theme:{extend:{
   </aside>
 
   <div class="flex-1 flex flex-col min-w-0 overflow-x-hidden">
-    <header class="bg-mata text-papel px-4 md:px-8 pt-4 pb-5 shadow-md sticky top-0 z-20 rounded-b-[24px] md:rounded-none">
+    <header class="bg-mata text-papel px-4 md:px-8 pb-5 shadow-md sticky top-0 z-20 rounded-b-[24px] md:rounded-none" style="padding-top:calc(1rem + env(safe-area-inset-top))">
       <div class="flex justify-between items-center mb-3 max-w-5xl mx-auto">
         <div class="flex items-center space-x-2 md:hidden"><div class="w-8 h-8 rounded-lg bg-white/10 text-manga flex items-center justify-center font-extrabold text-sm">C</div><span class="font-bold text-sm" id="titulo-mobile">CFM</span></div>
         <div class="hidden md:block font-bold text-lg" id="titulo-aba">Resumo</div>
@@ -1317,7 +1318,7 @@ function limparDados(){askConfirm('Apagar TODOS os dados do perfil "'+nomePerfil
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();document.getElementById('confirmbox').classList.add('hidden');}});
 (function(){const pd=carregar('pessoal');if(pd&&pd.nome)document.getElementById('nome-perfil-pessoal-btn').textContent=pd.nome;})();
 </script>
-  <script>
+<script>
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('/service-worker.js')
