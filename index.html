@@ -16,7 +16,7 @@ tailwind.config={theme:{extend:{
 </script>
 <style>
   *{box-sizing:border-box}
-  html{padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);background:#123B2A}
+  html{padding-top:env(safe-area-inset-top);background:#123B2A}
   .valor{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums}
   ::placeholder{font-size:.8rem;color:#9ca3af}
   .nav-ativo{color:#F2A93B!important}
@@ -124,7 +124,7 @@ tailwind.config={theme:{extend:{
         <div class="flex-1 px-1"><p class="text-[10px] opacity-70 mb-0.5">Previsto</p><p id="saldo-previsto" class="valor text-xs md:text-sm font-semibold opacity-80 cursor-pointer hover:text-manga" onclick="editarSaldoInline('previsto',this)">R$ 0,00</p></div>
       </div>
     </header>
-    <main class="flex-1 w-full max-w-5xl mx-auto px-4 md:px-8 pt-4 pb-28 md:pb-10 space-y-4">
+    <main class="flex-1 w-full max-w-5xl mx-auto px-4 md:px-8 pt-4 md:pb-10 space-y-4" style="padding-bottom:calc(7rem + env(safe-area-inset-bottom))">
       <!-- RESUMO -->
       <section id="aba-resumo" class="space-y-4">
         <div class="relative"><i class="fas fa-search absolute left-4 top-3.5 text-gray-400 text-sm"></i>
