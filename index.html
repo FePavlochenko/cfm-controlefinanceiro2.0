@@ -18,8 +18,15 @@ tailwind.config={theme:{extend:{
   *{box-sizing:border-box}
   html,body{overflow-x:hidden;max-width:100vw}
   html{padding-top:env(safe-area-inset-top);background:#123B2A}
+  
+  /* CRÍTICO: Previne zoom automático do iOS - MUITO AGRESSIVO */
+  input{font-size:16px!important;-webkit-font-smoothing:antialiased}
+  select{font-size:16px!important;-webkit-font-smoothing:antialiased}
+  textarea{font-size:16px!important;-webkit-font-smoothing:antialiased}
+  input::placeholder{font-size:14px}
+  select option{font-size:16px}
+  
   .valor{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums}
-  ::placeholder{font-size:.8rem;color:#9ca3af}
   .nav-ativo{color:#F2A93B!important}
   .side-ativo{background:rgba(46,125,79,.14);color:#123B2A!important;font-weight:700}
   .pill-ativo{background:#123B2A;color:#F6F5F0}
@@ -108,8 +115,8 @@ tailwind.config={theme:{extend:{
   <div class="flex-1 flex flex-col min-w-0 overflow-x-hidden">
     <header class="bg-mata text-papel px-4 md:px-8 pb-5 shadow-md sticky top-0 z-20 rounded-b-[24px] md:rounded-none" style="padding-top:calc(1rem + env(safe-area-inset-top))">
       <div class="flex justify-between items-center mb-3 max-w-5xl mx-auto">
-        <div class="flex items-center space-x-2 md:hidden"><div class="w-8 h-8 rounded-lg bg-white/10 text-manga flex items-center justify-center font-extrabold text-sm">C</div><span class="font-bold text-sm" id="titulo-mobile">CFM</span></div>
-        <div class="hidden md:block font-bold text-lg" id="titulo-aba">Resumo</div>
+        <div class="flex items-center space-x-2 md:hidden cursor-pointer" onclick="abrirSeletorPerfil()"><div class="w-8 h-8 rounded-lg bg-white/10 text-manga flex items-center justify-center font-extrabold text-sm">C</div><span class="font-bold text-sm" id="titulo-mobile">CFM</span></div>
+        <div class="hidden md:block font-bold text-lg cursor-pointer" id="titulo-aba" onclick="abrirSeletorPerfil()">Resumo</div>
         <div class="flex items-center space-x-4">
           <button onclick="mudarMes(-1)" class="opacity-70 hover:opacity-100 text-sm"><i class="fas fa-chevron-left"></i></button>
           <span id="label-mes" class="font-bold tracking-wide min-w-[90px] text-center text-sm md:text-base">Julho</span>
@@ -268,25 +275,41 @@ tailwind.config={theme:{extend:{
 
 <!-- MODAL LANÇAMENTO -->
 <div id="modal" class="hidden fixed inset-0 bg-black/50 z-40 flex items-end" onclick="if(event.target===this)fecharModal()">
-  <div class="bg-papel w-full rounded-t-3xl shadow-2xl overflow-hidden" style="padding-bottom:calc(1.5rem + env(safe-area-inset-bottom));max-height:90vh;overflow-y:auto">
-    <div class="w-10 h-1.5 bg-gray-300 rounded-full mx-auto mt-3 mb-4"></div>
-    <div class="px-5">
+  <div class="bg-papel w-full rounded-t-3xl shadow-2xl" style="padding:1.25rem 1.25rem calc(1.5rem + env(safe-area-inset-bottom));max-height:92vh;overflow-y:auto">
+    <div class="w-10 h-1.5 bg-gray-300 rounded-full mx-auto mb-4"></div>
     <h3 class="font-bold text-base mb-4">Novo lançamento</h3>
     <div class="flex bg-white border border-gray-200 rounded-full p-1 mb-4 text-sm font-semibold">
       <button id="btn-despesa" onclick="setTipo('despesa')" class="flex-1 py-2 rounded-full bg-goiaba text-white">Despesa</button>
       <button id="btn-receita" onclick="setTipo('receita')" class="flex-1 py-2 rounded-full text-gray-500">Receita</button></div>
-    <input id="inp-desc" type="text" placeholder="Descrição" class="w-full bg-white border border-gray-200 rounded-xl py-2.5 px-4 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-folha">
-    <input id="inp-valor" type="number" step="0.01" min="0" placeholder="Valor (R$)" class="valor w-full bg-white border border-gray-200 rounded-xl py-2.5 px-4 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-folha">
+    <input id="inp-desc" type="text" placeholder="Descrição" class="w-full bg-white border border-gray-200 rounded-xl py-2.5 px-4 mb-3 focus:outline-none focus:ring-2 focus:ring-folha">
+    <input id="inp-valor" type="number" step="0.01" min="0" placeholder="Valor (R$)" class="valor w-full bg-white border border-gray-200 rounded-xl py-2.5 px-4 mb-3 focus:outline-none focus:ring-2 focus:ring-folha">
     <div class="grid grid-cols-2 gap-3 mb-3">
-      <select id="inp-conta" class="bg-white border border-gray-200 rounded-xl py-2.5 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-folha"></select>
-      <select id="inp-cat" onchange="atualizarSubcats()" class="bg-white border border-gray-200 rounded-xl py-2.5 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-folha"></select></div>
-    <select id="inp-subcat" class="w-full bg-white border border-gray-200 rounded-xl py-2.5 px-3 text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-folha hidden"></select>
+      <select id="inp-conta" class="bg-white border border-gray-200 rounded-xl py-2.5 px-3 focus:outline-none focus:ring-2 focus:ring-folha"></select>
+      <select id="inp-cat" onchange="atualizarSubcats()" class="bg-white border border-gray-200 rounded-xl py-2.5 px-3 focus:outline-none focus:ring-2 focus:ring-folha"></select></div>
+    <select id="inp-subcat" class="w-full bg-white border border-gray-200 rounded-xl py-2.5 px-3 mb-4 focus:outline-none focus:ring-2 focus:ring-folha hidden"></select>
     <div class="flex space-x-3"><button onclick="fecharModal()" class="flex-1 border border-gray-300 text-gray-600 font-semibold py-3 rounded-xl">Cancelar</button>
       <button onclick="salvarLancamento()" class="flex-1 bg-mata text-papel font-bold py-3 rounded-xl hover:bg-folha transition">Salvar</button></div>
-    </div>
   </div>
 </div>
 <div id="emoji-pop" class="emoji-pop hidden"></div>
+
+<!-- SELETOR DE PERFIL NO HEADER -->
+<div id="seletor-perfil" class="hidden fixed top-12 left-4 z-50 bg-white rounded-2xl shadow-2xl border border-gray-100 py-2 w-56">
+  <button onclick="selecionarPerfil('pessoal');fecharSeletorPerfil()" class="w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center space-x-3 transition">
+    <span class="w-8 h-8 rounded-lg bg-folha/20 flex items-center justify-center text-folha"><i class="fas fa-user text-sm"></i></span>
+    <div>
+      <p class="font-semibold text-sm" id="perfil-pessoal-nome">Fernando</p>
+      <p class="text-xs text-gray-400">Suas finanças</p>
+    </div>
+  </button>
+  <button onclick="selecionarPerfil('quitanda');fecharSeletorPerfil()" class="w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center space-x-3 transition border-t border-gray-100">
+    <span class="w-8 h-8 rounded-lg bg-manga/20 flex items-center justify-center text-manga"><i class="fas fa-store text-sm"></i></span>
+    <div>
+      <p class="font-semibold text-sm">Gonçalo Quitanda</p>
+      <p class="text-xs text-gray-400">Caixa da loja</p>
+    </div>
+  </button>
+</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>if(typeof pdfjsLib!=='undefined')pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
@@ -1315,6 +1338,24 @@ function parseCSV(txt){
   });
   return itens;
 }
+
+// ===== SELETOR DE PERFIL NO HEADER =====
+function abrirSeletorPerfil(){
+  const sel=document.getElementById('seletor-perfil');
+  sel.classList.toggle('hidden');
+}
+function fecharSeletorPerfil(){
+  const sel=document.getElementById('seletor-perfil');
+  sel.classList.add('hidden');
+}
+// Fecha ao clicar fora
+document.addEventListener('click',e=>{
+  const sel=document.getElementById('seletor-perfil');
+  const header=document.querySelector('header');
+  if(!sel.contains(e.target) && !header.contains(e.target)){
+    fecharSeletorPerfil();
+  }
+});
 
 // ===== LIMPAR / INIT =====
 function limparDados(){askConfirm('Apagar TODOS os dados do perfil "'+nomePerfil()+'"?',()=>{D=dadosPadrao(perfil);persistir();render();toast('Dados restaurados ao padrão.');});}
