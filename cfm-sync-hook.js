@@ -1,14 +1,12 @@
 // ============================================
-// CFM SUPABASE SYNC HOOK (IDS CORRIGIDOS)
+// CFM SUPABASE SYNC HOOK (VERSÃO FINAL)
 // ============================================
-// Sincronização automática com Supabase
-// CORREÇÃO: IDs dos perfis completos e data no formato YYYY-MM-DD
+// SEM ENVIAR ID - Deixa Supabase gerar automaticamente
 
 (function() {
   const SUPABASE_URL = 'https://aiyptgdemugbapbfevcw.supabase.co';
   const SUPABASE_KEY = 'sb_publishable_QBtGEzIz3zlhH_9dtQql5g_sieiz0iO';
 
-  // ✅ IDS CORRIGIDOS E COMPLETOS
   const PROFILE_IDS = {
     pessoal: 'bcc95e03-01a5-4f1a-b7a3-5b575781c428',
     quitanda: '138deb76-4a0b-40a6-a713-f2cadf2c5160'
@@ -30,7 +28,7 @@
       const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
       window.cfmSyncClient = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-      console.log(`✅ CFM Sync iniciado para ${perfilAtual} (${profileId})`);
+      console.log(`✅ CFM Sync iniciado para ${perfilAtual}`);
 
       setupRealtimeListeners(profileId);
       setupHooks();
@@ -154,14 +152,11 @@
 
       for (const tx of transacoes) {
         try {
-          // Data no formato YYYY-MM-DD correto
           const mesNum = String(mes).padStart(2, '0');
           const dataFormatada = `2026-${mesNum}-01`;
 
-          const id = `${profileId}-${mes}-${tx.desc || 'tx'}-${Date.now()}-${Math.random()}`;
-
+          // ✅ NÃO ENVIA ID - Deixa Supabase gerar
           const dataSync = {
-            id: id,
             profile_id: profileId,
             type: tx.tipo === 'receita' ? 'income' : 'expense',
             category: tx.cat || 'Sem categoria',
@@ -172,8 +167,7 @@
             icon: tx.icon || '',
             notes: tx.conta ? `Conta: ${tx.conta}` : '',
             updated_at: new Date().toISOString(),
-            synced_at: new Date().toISOString(),
-            deleted_at: null
+            synced_at: new Date().toISOString()
           };
 
           const { data, error } = await window.cfmSyncClient
@@ -197,21 +191,20 @@
 
     for (const conta of contas) {
       try {
+        // ✅ NÃO ENVIA ID
         const dataSync = {
-          id: `${profileId}-${conta.nome}`,
           profile_id: profileId,
           name: conta.nome || 'Sem nome',
           type: 'bank',
           balance: parseFloat(conta.saldo) || 0,
           emoji: conta.emoji || '',
           updated_at: new Date().toISOString(),
-          synced_at: new Date().toISOString(),
-          deleted_at: null
+          synced_at: new Date().toISOString()
         };
 
         const { data, error } = await window.cfmSyncClient
           .from('accounts')
-          .upsert([dataSync]);
+          .insert([dataSync]);
 
         if (error) {
           console.error(`❌ Erro conta ${conta.nome}:`, error.message);
@@ -229,20 +222,19 @@
 
     for (const cat of categorias) {
       try {
+        // ✅ NÃO ENVIA ID
         const dataSync = {
-          id: `${profileId}-${cat.nome}`,
           profile_id: profileId,
           name: cat.nome || 'Sem nome',
           type: cat.tipo || 'despesa',
           emoji: cat.emoji || '',
           updated_at: new Date().toISOString(),
-          synced_at: new Date().toISOString(),
-          deleted_at: null
+          synced_at: new Date().toISOString()
         };
 
         const { data, error } = await window.cfmSyncClient
           .from('categories')
-          .upsert([dataSync]);
+          .insert([dataSync]);
 
         if (error) {
           console.error(`❌ Erro categoria ${cat.nome}:`, error.message);
@@ -254,18 +246,16 @@
           for (const sub of cat.sub) {
             try {
               const subSync = {
-                id: `${profileId}-${cat.nome}-${sub}`,
                 profile_id: profileId,
                 category_id: `${profileId}-${cat.nome}`,
                 name: sub,
                 updated_at: new Date().toISOString(),
-                synced_at: new Date().toISOString(),
-                deleted_at: null
+                synced_at: new Date().toISOString()
               };
 
               await window.cfmSyncClient
                 .from('subcategories')
-                .upsert([subSync]);
+                .insert([subSync]);
             } catch (e) {
               console.warn('⚠️ Erro subcategoria:', e.message);
             }
@@ -311,7 +301,6 @@
     return {
       online: navigator.onLine,
       perfil: perfilAtual,
-      profileId: PROFILE_IDS[perfilAtual],
       timestamp: new Date().toLocaleString('pt-BR')
     };
   };
@@ -327,5 +316,5 @@
     setTimeout(iniciarSync, 500);
   }
 
-  console.log('✅ CFM Sync Hook (IDS CORRIGIDOS) carregado');
+  console.log('✅ CFM Sync Hook (FINAL) carregado');
 })();
