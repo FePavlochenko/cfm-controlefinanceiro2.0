@@ -1,16 +1,17 @@
 // ============================================
-// CFM SUPABASE SYNC HOOK (VERSÃO FINAL)
+// CFM SUPABASE SYNC HOOK (IDS CORRIGIDOS)
 // ============================================
 // Sincronização automática com Supabase
-// CORREÇÃO FINAL: Data no formato YYYY-MM-DD
+// CORREÇÃO: IDs dos perfis completos e data no formato YYYY-MM-DD
 
 (function() {
   const SUPABASE_URL = 'https://aiyptgdemugbapbfevcw.supabase.co';
   const SUPABASE_KEY = 'sb_publishable_QBtGEzIz3zlhH_9dtQql5g_sieiz0iO';
 
+  // ✅ IDS CORRIGIDOS E COMPLETOS
   const PROFILE_IDS = {
-    pessoal: 'bcc95e03-01a5-4f1a-b7a3-5b575781c',
-    quitanda: '138deb76-4a0b-40a6-a713-f2cadf2c5'
+    pessoal: 'bcc95e03-01a5-4f1a-b7a3-5b575781c428',
+    quitanda: '138deb76-4a0b-40a6-a713-f2cadf2c5160'
   };
 
   let ultimaSincronizacao = Date.now();
@@ -29,7 +30,7 @@
       const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
       window.cfmSyncClient = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-      console.log(`✅ CFM Sync iniciado para ${perfilAtual}`);
+      console.log(`✅ CFM Sync iniciado para ${perfilAtual} (${profileId})`);
 
       setupRealtimeListeners(profileId);
       setupHooks();
@@ -153,7 +154,7 @@
 
       for (const tx of transacoes) {
         try {
-          // CORREÇÃO IMPORTANTE: Data no formato YYYY-MM-DD
+          // Data no formato YYYY-MM-DD correto
           const mesNum = String(mes).padStart(2, '0');
           const dataFormatada = `2026-${mesNum}-01`;
 
@@ -167,7 +168,7 @@
             subcategory: tx.sub || '',
             description: tx.desc || '',
             amount: parseFloat(tx.valor) || 0,
-            date: dataFormatada, // ✅ FORMATO CORRETO: YYYY-MM-DD
+            date: dataFormatada,
             icon: tx.icon || '',
             notes: tx.conta ? `Conta: ${tx.conta}` : '',
             updated_at: new Date().toISOString(),
@@ -310,6 +311,7 @@
     return {
       online: navigator.onLine,
       perfil: perfilAtual,
+      profileId: PROFILE_IDS[perfilAtual],
       timestamp: new Date().toLocaleString('pt-BR')
     };
   };
@@ -325,5 +327,5 @@
     setTimeout(iniciarSync, 500);
   }
 
-  console.log('✅ CFM Sync Hook (FINAL) carregado');
+  console.log('✅ CFM Sync Hook (IDS CORRIGIDOS) carregado');
 })();
