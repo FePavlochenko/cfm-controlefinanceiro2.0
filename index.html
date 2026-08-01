@@ -467,7 +467,7 @@ function selecionarPerfil(p){
 function voltarPerfil(){
   const app=document.getElementById('app');app.classList.add('hidden');app.classList.remove('flex');
   document.getElementById('tela-perfil').classList.remove('hidden');
-  const pd=carregar('pessoal');document.getElementById('nome-perfil-pessoal-btn').textContent=(pd&&pd.nome)?pd.nome:'Fernando';
+  document.getElementById('nome-perfil-pessoal-btn').textContent='Fernando';
 }
 function nomePerfil(){return D.nome&&D.nome.trim()?D.nome:(perfil==='quitanda'?'Gonçalo Quitanda':'Fernando');}
 function atualizarPills(){
@@ -1320,7 +1320,19 @@ function parseCSV(txt){
 // ===== LIMPAR / INIT =====
 function limparDados(){askConfirm('Apagar TODOS os dados do perfil "'+nomePerfil()+'"?',()=>{D=dadosPadrao(perfil);persistir();render();toast('Dados restaurados ao padrão.');});}
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();document.getElementById('confirmbox').classList.add('hidden');}});
-(function(){const pd=carregar('pessoal');if(pd&&pd.nome)document.getElementById('nome-perfil-pessoal-btn').textContent=pd.nome;})();
+(function(){
+  // Sempre mostra "Fernando" no perfil pessoal da tela de seleção
+  // (independente do que estiver salvo no localStorage)
+  const btn = document.getElementById('nome-perfil-pessoal-btn');
+  if (btn) btn.textContent = 'Fernando';
+
+  // Restaurar perfil ativo automaticamente (sem precisar selecionar manualmente)
+  const perfilSalvo = localStorage.getItem('cfm-perfil-ativo');
+  if (perfilSalvo === 'pessoal' || perfilSalvo === 'quitanda') {
+    // Pequeno delay para garantir que o DOM e as funções estejam prontos
+    setTimeout(() => { if (typeof selecionarPerfil === 'function') selecionarPerfil(perfilSalvo); }, 100);
+  }
+})();
 </script>
 <script>
   if ('serviceWorker' in navigator) {
@@ -1421,9 +1433,9 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
         }
 
         if (novoUpdatedAt !== ultimoUpdatedAt) {
-          console.log('📡 Mudança de outro device detectada! Recarregando...');
+          console.log('📡 Mudança de outro device detectada! Baixando dados...');
           ultimoUpdatedAt = novoUpdatedAt;
-          location.reload();
+          await baixarDadosDoSupabase(profileId);
         }
       } catch(e) {
         console.warn('Erro no polling:', e.message);
@@ -1433,6 +1445,82 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
     checarMudancas();
     setInterval(checarMudancas, 10000);
     console.log('Polling ativo (10s)');
+  }
+
+  async function baixarDadosDoSupabase(profileId) {
+    if (!window.cfmSyncClient) return;
+    try {
+      // Descobre qual chave de perfil corresponde ao profileId
+      const perfilChave = Object.entries(PROFILE_IDS).find(([k, v]) => v === profileId)?.[0];
+      if (!perfilChave) return;
+
+      // Busca transações
+      const { data: txs, error: txErr } = await window.cfmSyncClient
+        .from('transactions')
+        .select('*')
+        .eq('profile_id', profileId);
+
+      if (txErr) { console.error('❌ Erro ao baixar transações:', txErr.message); return; }
+
+      // Busca contas
+      const { data: contas, error: contaErr } = await window.cfmSyncClient
+        .from('accounts')
+        .select('*')
+        .eq('profile_id', profileId);
+
+      if (contaErr) { console.error('❌ Erro ao baixar contas:', contaErr.message); return; }
+
+      // Pega os dados locais atuais para preservar config (categorias, reserva, etc)
+      const dadosLocais = JSON.parse(localStorage.getItem('cfm-v4-' + perfilChave) || '{}');
+
+      // Reconstrói os lançamentos por mês a partir das transações do Supabase
+      if (txs && txs.length > 0) {
+        const lancPorMes = {};
+        txs.forEach(tx => {
+          // Extrai o mês da data (ex: "2026-07-01" → 6, índice 0-based)
+          const partes = (tx.date || '').split('-');
+          const mes = partes.length >= 2 ? parseInt(partes[1], 10) - 1 : new Date().getMonth();
+          if (!lancPorMes[mes]) lancPorMes[mes] = [];
+          lancPorMes[mes].push({
+            desc: tx.description || '',
+            valor: parseFloat(tx.amount) || 0,
+            tipo: tx.type === 'income' ? 'receita' : 'despesa',
+            conta: tx.notes ? tx.notes.replace('Conta: ', '') : '',
+            cat: tx.category || '',
+            sub: tx.subcategory || '',
+            cartao: ''
+          });
+        });
+        dadosLocais.lanc = lancPorMes;
+      }
+
+      // Reconstrói contas
+      if (contas && contas.length > 0) {
+        dadosLocais.contas = contas.map(c => ({
+          nome: c.name || 'Conta',
+          saldo: parseFloat(c.balance) || 0,
+          logo: ''
+        }));
+      }
+
+      // Salva no localStorage
+      localStorage.setItem('cfm-v4-' + perfilChave, JSON.stringify(dadosLocais));
+
+      // Se for o perfil ativo, atualiza D e re-renderiza sem reload
+      if (perfilChave === perfilAtual) {
+        // D é uma variável global do app principal
+        if (typeof D !== 'undefined') {
+          // Copia os campos atualizados para o D global
+          Object.assign(D, dadosLocais);
+        }
+        if (typeof render === 'function') {
+          render();
+          console.log('✅ Dados atualizados do Supabase e tela re-renderizada');
+        }
+      }
+    } catch(e) {
+      console.error('❌ Erro em baixarDadosDoSupabase:', e.message);
+    }
   }
 
 
