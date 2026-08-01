@@ -1400,13 +1400,83 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
 
     window.cfmSyncClient
       .channel('cfm-changes-' + profileId)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions', filter: 'profile_id=eq.' + profileId }, () => {
-        console.log('📡 Mudança recebida de outro device!');
-        setTimeout(() => { if (typeof render === 'function') render(); }, 500);
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions', filter: 'profile_id=eq.' + profileId }, async (payload) => {
+        console.log('📡 Mudança recebida de outro device!', payload.eventType);
+        await baixarDadosDoSupabase(profileId);
       })
       .subscribe((status) => {
         console.log('📡 Realtime status:', status);
       });
+  }
+
+  async function baixarDadosDoSupabase(profileId) {
+    try {
+      console.log('⬇️ Baixando dados do Supabase...');
+
+      // Busca todas as transações do perfil
+      const { data: txs, error: txErr } = await window.cfmSyncClient
+        .from('transactions')
+        .select('*')
+        .eq('profile_id', profileId)
+        .is('deleted_at', null)
+        .order('date', { ascending: false });
+
+      if (txErr) {
+        console.error('❌ Erro ao baixar transações:', txErr.message);
+        return;
+      }
+
+      if (!txs || txs.length === 0) {
+        console.log('📭 Nenhuma transação no Supabase');
+        return;
+      }
+
+      // Converte dados do Supabase para o formato do CFM
+      const perfil = perfilAtual || 'pessoal';
+      const dadosAtual = JSON.parse(localStorage.getItem('cfm-v4-' + perfil) || '{}');
+
+      // Reconstrói o objeto lanc por mês
+      const novoLanc = {};
+      txs.forEach(tx => {
+        if (!tx.date) return;
+        const mes = parseInt(tx.date.split('-')[1]);
+        if (!novoLanc[mes]) novoLanc[mes] = [];
+
+        // Verifica se já existe para evitar duplicatas
+        const jaExiste = novoLanc[mes].some(l => 
+          l.desc === tx.description && 
+          l.valor === tx.amount
+        );
+        if (!jaExiste) {
+          novoLanc[mes].push({
+            desc: tx.description || '',
+            valor: tx.amount || 0,
+            tipo: tx.type === 'income' ? 'receita' : 'despesa',
+            cat: tx.category || '',
+            sub: tx.subcategory || '',
+            conta: tx.notes ? tx.notes.replace('Conta: ', '') : '',
+            icon: tx.icon || ''
+          });
+        }
+      });
+
+      // Atualiza o localStorage com os dados novos
+      dadosAtual.lanc = novoLanc;
+      localStorage.setItem('cfm-v4-' + perfil, JSON.stringify(dadosAtual));
+
+      console.log('✅ Dados atualizados do Supabase!', txs.length, 'transações');
+
+      // Atualiza a tela
+      try {
+        if (typeof render === 'function') render();
+      } catch(e) {
+        console.log('🔄 Recarregando página...');
+        location.reload();
+      }
+
+    } catch(error) {
+      console.error('❌ Erro ao baixar dados:', error.message);
+    }
   }
 
   function setupHooks() {
