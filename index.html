@@ -434,6 +434,12 @@ function migrar(d,p){
   if(!d)return dadosPadrao(p);
   const pad=dadosPadrao(p);
   if(d.nome===undefined)d.nome=p==='quitanda'?'Gonçalo Quitanda':'Fernando';
+  // Detecta categorias do perfil errado e substitui pelas corretas
+  // (Quitanda tem "Custos fixos", Fernando tem "Alimentação")
+  const temCatQuitanda = d.catsDespesa && d.catsDespesa.some(c=>(c.nome||'').includes('Custos fixos')||c.nome.includes('Mercadorias'));
+  const temCatFernando = d.catsDespesa && d.catsDespesa.some(c=>(c.nome||'').includes('Alimentação')||c.nome.includes('Moradia'));
+  if(p==='pessoal' && temCatQuitanda && !temCatFernando){ d.catsDespesa=pad.catsDespesa; d.catsReceita=pad.catsReceita; }
+  if(p==='quitanda' && temCatFernando && !temCatQuitanda){ d.catsDespesa=pad.catsDespesa; d.catsReceita=pad.catsReceita; }
   if(Array.isArray(d.cats)){d.catsDespesa=d.cats.map(c=>({nome:c,sub:[]}));delete d.cats;}
   if(!d.catsDespesa)d.catsDespesa=pad.catsDespesa;
   if(!d.catsReceita)d.catsReceita=pad.catsReceita;
@@ -459,12 +465,20 @@ function migrar(d,p){
 
 // ===== PERFIL + NAV =====
 function selecionarPerfil(p){
-  perfil=p; D=migrar(carregar(p),p); localStorage.setItem('cfm-perfil-ativo', p); persistir();
+  perfil=p;
+  // Garante que os dados carregados pertencem ao perfil correto
+  // Se houver dados de outro perfil misturados, usa os padrões
+  let dados = carregar(p);
+  if(dados && dados.nome && p==='pessoal' && dados.nome==='Gonçalo Quitanda') dados=null;
+  if(dados && dados.nome && p==='quitanda' && dados.nome==='Fernando') dados=null;
+  D=migrar(dados,p);
+  localStorage.setItem('cfm-perfil-ativo', p);
+  persistir();
   document.getElementById('tela-perfil').classList.add('hidden');
   const app=document.getElementById('app');app.classList.remove('hidden');app.classList.add('flex');
   montarNav();atualizarPills();irPara('resumo');
-  // Notifica o sync module sobre a troca de perfil
-  if (typeof window.CFMSyncTrocarPerfil === 'function') window.CFMSyncTrocarPerfil(p);
+  // Notifica o sync para trocar de perfil
+  if(typeof window.CFMSyncTrocarPerfil==='function') window.CFMSyncTrocarPerfil(p);
 }
 function voltarPerfil(){
   const app=document.getElementById('app');app.classList.add('hidden');app.classList.remove('flex');
@@ -1231,12 +1245,11 @@ function mostrarRevisaoImport(){
     // subcategorias da categoria atual
     const catObj=todasCats.find(c=>c.nome===it.cat);
     const subs=catObj&&catObj.sub&&catObj.sub.length?catObj.sub:[];
-    return `<div id="imp-linha-${i}" class="bg-white rounded-xl p-3 border border-gray-100 space-y-2">
+    return `<div class="bg-white rounded-xl p-3 border border-gray-100 space-y-2">
       <div class="flex items-center gap-2">
         <span class="valor text-xs font-bold ${cor} shrink-0">${sinal} ${fmt(it.valor)}</span>
         <input value="${(it.desc||'').replace(/"/g,'&quot;')}" onchange="importados[${i}].desc=this.value"
                class="flex-1 min-w-0 bg-gray-50 border border-gray-200 rounded-lg py-1.5 px-2 text-xs">
-        <button onclick="removerLinhaImport(${i})" class="text-gray-300 hover:text-goiaba text-xs shrink-0" title="Remover esta transação"><i class="fas fa-trash"></i></button>
       </div>
       <div class="flex gap-2 flex-wrap">
         <select onchange="importados[${i}].tipo=this.value;atualizarLinhaImport(${i})"
@@ -1284,35 +1297,17 @@ function atualizarLinhaImport(i){
   subEl.classList.toggle('hidden',!subs.length);
 }
 
-function removerLinhaImport(i){
-  // Marca como removido (null) para não incluir no confirmar
-  importados[i] = null;
-  // Remove visualmente a linha
-  const linha = document.getElementById('imp-linha-' + i);
-  if (linha) linha.remove();
-  // Atualiza o contador no botão confirmar
-  const ativos = importados.filter(x => x !== null).length;
-  const btnConfirmar = document.querySelector('#revisao-import button.bg-mata');
-  if (btnConfirmar) btnConfirmar.textContent = 'Confirmar ' + ativos;
-  if (ativos === 0) {
-    const box = document.getElementById('revisao-import');
-    if (box) box.remove();
-    toast('Nenhuma transação para importar.');
-  }
-}
-
 function confirmarImport(){
   if(!D.lanc[mesAtual])D.lanc[mesAtual]=[];
   const contaPadrao=D.contas[0]?.nome||'Conta';
-  const ativos=importados.filter(it=>it!==null);
-  ativos.forEach(it=>{
+  importados.forEach(it=>{
     D.lanc[mesAtual].push({
       desc:it.desc,valor:it.valor,tipo:it.tipo,
       conta:it.conta||contaPadrao,
-      cat:it.cat||'📦 Outros',sub:it.sub||'',cartao:importModoCartao?importCartaoNome:''
+      cat:it.cat||'📦 Outros',sub:it.sub||'',      cartao:importModoCartao?importCartaoNome:''
     });
   });
-  const n=ativos.length;importados=[];
+  const n=importados.length;importados=[];
   const box=document.getElementById('revisao-import');if(box)box.remove();
   persistir();render();toast(`${n} transações importadas${importModoCartao?' no cartão '+importCartaoNome:''}!`);
 }
@@ -1385,293 +1380,261 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
   display: none;
 "></div>
 
-<!-- Supabase via CDN (evita problemas com ESM import) -->
+<!-- Supabase via CDN -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 
-<!-- Sync Hook - Sincroniza automaticamente com Supabase -->
+<!-- CFM Sync - versão corrigida -->
 <script>
 (function() {
   const SUPABASE_URL = 'https://aiyptgdemugbapbfevcw.supabase.co';
   const SUPABASE_KEY = 'sb_publishable_QBtGEzIz3zlhH_9dtQql5g_sieiz0iO';
-
   const PROFILE_IDS = {
-    pessoal: 'bcc95e03-01a5-4f1a-b7a3-5b575781c428',
+    pessoal:  'bcc95e03-01a5-4f1a-b7a3-5b575781c428',
     quitanda: '138deb76-4a0b-40a6-a713-f2cadf2c5160'
   };
 
-  let ultimaSincronizacao = 0;
-  let perfilAtual = null;
+  // ── estado interno ──────────────────────────────────────────────────────────
+  let syncClient       = null;
+  let ultimoSync       = 0;          // timestamp do último upsert enviado
+  let syncing          = false;       // trava para evitar execuções paralelas
+  let pollingInterval  = null;        // referência do setInterval atual
+  let ultimoUpdatedAt  = null;        // marca d'água do polling
 
+  // ── helpers ─────────────────────────────────────────────────────────────────
+
+  // Retorna o perfil REALMENTE ativo agora (lê a variável global `perfil` do app)
+  function perfilAtivo() {
+    return (typeof perfil !== 'undefined' && perfil)
+      ? perfil
+      : (localStorage.getItem('cfm-perfil-ativo') || 'pessoal');
+  }
+
+  // Converte índice de mês JS (0-11) para data válida "YYYY-MM-01"
+  function mesParaData(mesIdx) {
+    const ano = new Date().getFullYear();
+    const mm  = String(parseInt(mesIdx, 10) + 1).padStart(2, '0'); // 0→01, 7→08
+    return `${ano}-${mm}-01`;
+  }
+
+  // ── inicialização ───────────────────────────────────────────────────────────
   function iniciarSync() {
+    if (!window.supabase) { console.error('❌ Supabase CDN não carregou'); return; }
+    syncClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    window.cfmSyncClient = syncClient;
+    console.log('✅ CFM Sync iniciado');
+
+    hookPersistir();
+    iniciarPolling();
+  }
+
+  // ── hook em persistir() ─────────────────────────────────────────────────────
+  function hookPersistir() {
+    const orig = window.persistir;
+    window.persistir = function() {
+      if (orig) orig.call(this);
+      // Debounce: ignora se já houve sync há menos de 2s
+      const agora = Date.now();
+      if (agora - ultimoSync < 2000) return;
+      sincronizar();
+    };
+    console.log('🔗 Hook persistir() instalado');
+  }
+
+  // ── sync: envia localStorage → Supabase ─────────────────────────────────────
+  async function sincronizar() {
+    if (!syncClient || !navigator.onLine) return;
+    if (syncing) return;   // evita execuções paralelas
+    syncing = true;
+    ultimoSync = Date.now();
+
     try {
-      perfilAtual = localStorage.getItem('cfm-perfil-ativo') || 'pessoal';
-      const profileId = PROFILE_IDS[perfilAtual];
+      const p  = perfilAtivo();
+      const id = PROFILE_IDS[p];
+      if (!id) { syncing = false; return; }
 
-      if (!profileId) {
-        console.warn('⚠️ Perfil desconhecido:', perfilAtual);
-        return;
+      const dados = JSON.parse(localStorage.getItem('cfm-v4-' + p) || '{}');
+      if (!dados || !dados.lanc) { syncing = false; return; }
+
+      // 1. Deleta TODAS as transações do perfil e reinserir
+      //    (estratégia simples e sem duplicação: substitui tudo)
+      await syncClient.from('transactions').delete().eq('profile_id', id);
+
+      // 2. Insere estado atual
+      const rows = [];
+      for (const [mesIdx, lista] of Object.entries(dados.lanc)) {
+        if (!Array.isArray(lista)) continue;
+        for (let i = 0; i < lista.length; i++) {
+          const tx = lista[i];
+          if (!tx) continue;
+          rows.push({
+            id:          id + '-' + mesIdx + '-' + i + '-' + (tx.desc||'').replace(/[^a-zA-Z0-9]/g,'').slice(0,16),
+            profile_id:  id,
+            type:        tx.tipo === 'receita' ? 'income' : 'expense',
+            category:    tx.cat  || 'Sem categoria',
+            subcategory: tx.sub  || '',
+            description: tx.desc || '',
+            amount:      parseFloat(tx.valor) || 0,
+            date:        mesParaData(mesIdx),   // ← data sempre válida
+            notes:       tx.conta ? 'Conta: ' + tx.conta : '',
+            updated_at:  new Date().toISOString()
+          });
+        }
       }
 
-      if (!window.supabase) {
-        console.error('❌ Supabase CDN não carregou!');
-        return;
+      if (rows.length > 0) {
+        const { error } = await syncClient.from('transactions').insert(rows);
+        if (error) console.error('❌ Insert erro:', error.message);
+        else console.log('✅ Sync OK:', rows.length, 'transações para', p);
       }
 
-      window.cfmSyncClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-      console.log('✅ CFM Sync iniciado para', perfilAtual, '|', profileId);
+      // 3. Contas
+      if (Array.isArray(dados.contas)) {
+        await syncClient.from('accounts').delete().eq('profile_id', id);
+        const cRows = dados.contas.map(c => ({
+          id:         id + '-conta-' + (c.nome||'').replace(/[^a-zA-Z0-9]/g,'').slice(0,16),
+          profile_id: id,
+          name:       c.nome  || 'Conta',
+          type:       'bank',
+          balance:    parseFloat(c.saldoInicial || c.saldo) || 0,
+          updated_at: new Date().toISOString()
+        }));
+        if (cRows.length > 0) {
+          const { error } = await syncClient.from('accounts').insert(cRows);
+          if (error) console.error('❌ Contas erro:', error.message);
+        }
+      }
 
-      setupRealtimeListeners(profileId);
-      setupHooks();
+      // Atualiza marca d'água para o polling não re-baixar o que acabamos de enviar
+      const { data: latest } = await syncClient
+        .from('transactions').select('updated_at')
+        .eq('profile_id', id).order('updated_at', { ascending: false }).limit(1);
+      if (latest && latest[0]) ultimoUpdatedAt = latest[0].updated_at;
 
-    } catch (error) {
-      console.error('❌ Erro ao inicializar sync:', error);
+    } catch(e) {
+      console.error('❌ Erro sync:', e.message);
+    } finally {
+      syncing = false;
     }
   }
 
-  function setupRealtimeListeners(profileId) {
-    if (!window.cfmSyncClient) return;
+  // ── polling: detecta mudanças de outro device ───────────────────────────────
+  function iniciarPolling() {
+    if (pollingInterval) clearInterval(pollingInterval);
+    ultimoUpdatedAt = null;
 
-    let ultimoUpdatedAt = null;
-
-    async function checarMudancas() {
-      if (!window.cfmSyncClient || !navigator.onLine) return;
+    async function checar() {
+      if (!syncClient || !navigator.onLine || syncing) return;
       try {
-        const { data, error } = await window.cfmSyncClient
-          .from('transactions')
-          .select('updated_at')
-          .eq('profile_id', profileId)
-          .order('updated_at', { ascending: false })
-          .limit(1);
+        const p  = perfilAtivo();
+        const id = PROFILE_IDS[p];
+        if (!id) return;
+
+        const { data, error } = await syncClient
+          .from('transactions').select('updated_at')
+          .eq('profile_id', id).order('updated_at', { ascending: false }).limit(1);
 
         if (error || !data || data.length === 0) return;
-
-        const novoUpdatedAt = data[0].updated_at;
+        const novo = data[0].updated_at;
 
         if (ultimoUpdatedAt === null) {
-          ultimoUpdatedAt = novoUpdatedAt;
-          console.log('📡 Polling iniciado:', novoUpdatedAt);
+          ultimoUpdatedAt = novo;
           return;
         }
 
-        if (novoUpdatedAt !== ultimoUpdatedAt) {
-          console.log('📡 Mudança de outro device detectada! Baixando dados...');
-          ultimoUpdatedAt = novoUpdatedAt;
-          await baixarDadosDoSupabase(profileId);
+        if (novo !== ultimoUpdatedAt) {
+          console.log('📡 Mudança remota detectada — baixando...');
+          ultimoUpdatedAt = novo;
+          await baixarDoSupabase(id, p);
         }
       } catch(e) {
-        console.warn('Erro no polling:', e.message);
+        console.warn('⚠️ Polling erro:', e.message);
       }
     }
 
-    checarMudancas();
-    setInterval(checarMudancas, 10000);
-    console.log('Polling ativo (10s)');
+    checar();
+    pollingInterval = setInterval(checar, 15000); // 15s é suficiente
+    console.log('📡 Polling ativo (15s)');
   }
 
-  async function baixarDadosDoSupabase(profileId) {
-    if (!window.cfmSyncClient) return;
+  // ── download: Supabase → localStorage + render ──────────────────────────────
+  async function baixarDoSupabase(profileId, perfilChave) {
+    // Só baixa se ainda for o perfil ativo
+    if (perfilChave !== perfilAtivo()) return;
+
     try {
-      // Descobre qual chave de perfil corresponde ao profileId
-      const perfilChave = Object.entries(PROFILE_IDS).find(([k, v]) => v === profileId)?.[0];
-      if (!perfilChave) return;
+      const { data: txs }    = await syncClient.from('transactions').select('*').eq('profile_id', profileId);
+      const { data: contas } = await syncClient.from('accounts').select('*').eq('profile_id', profileId);
 
-      // Só atualiza se for o perfil realmente ativo agora
-      const perfilAtivo = (typeof perfil !== 'undefined' && perfil)
-        ? perfil
-        : (localStorage.getItem('cfm-perfil-ativo') || 'pessoal');
-      if (perfilChave !== perfilAtivo) {
-        console.log('📡 Ignorando update de perfil inativo:', perfilChave);
-        return;
-      }
+      const local = JSON.parse(localStorage.getItem('cfm-v4-' + perfilChave) || '{}');
 
-      // Busca transações
-      const { data: txs, error: txErr } = await window.cfmSyncClient
-        .from('transactions')
-        .select('*')
-        .eq('profile_id', profileId);
-
-      if (txErr) { console.error('❌ Erro ao baixar transações:', txErr.message); return; }
-
-      // Busca contas
-      const { data: contas, error: contaErr } = await window.cfmSyncClient
-        .from('accounts')
-        .select('*')
-        .eq('profile_id', profileId);
-
-      if (contaErr) { console.error('❌ Erro ao baixar contas:', contaErr.message); return; }
-
-      // Pega os dados locais atuais para preservar config (categorias, reserva, etc)
-      const dadosLocais = JSON.parse(localStorage.getItem('cfm-v4-' + perfilChave) || '{}');
-
-      // Reconstrói os lançamentos por mês a partir das transações do Supabase
+      // Reconstrói lançamentos
       if (txs && txs.length > 0) {
-        const lancPorMes = {};
+        const lanc = {};
         txs.forEach(tx => {
-          // Extrai o mês da data (ex: "2026-07-01" → 6, índice 0-based)
           const partes = (tx.date || '').split('-');
-          const mes = partes.length >= 2 ? parseInt(partes[1], 10) - 1 : new Date().getMonth();
-          if (!lancPorMes[mes]) lancPorMes[mes] = [];
-          lancPorMes[mes].push({
-            desc: tx.description || '',
+          const mes    = partes.length >= 2 ? parseInt(partes[1], 10) - 1 : new Date().getMonth();
+          if (!lanc[mes]) lanc[mes] = [];
+          lanc[mes].push({
+            desc:  tx.description || '',
             valor: parseFloat(tx.amount) || 0,
-            tipo: tx.type === 'income' ? 'receita' : 'despesa',
-            conta: tx.notes ? tx.notes.replace('Conta: ', '') : '',
-            cat: tx.category || '',
-            sub: tx.subcategory || '',
+            tipo:  tx.type === 'income' ? 'receita' : 'despesa',
+            conta: (tx.notes || '').replace('Conta: ', ''),
+            cat:   tx.category    || '',
+            sub:   tx.subcategory || '',
             cartao: ''
           });
         });
-        dadosLocais.lanc = lancPorMes;
+        local.lanc = lanc;
       }
 
-      // Reconstrói contas
       if (contas && contas.length > 0) {
-        dadosLocais.contas = contas.map(c => ({
-          nome: c.name || 'Conta',
-          saldo: parseFloat(c.balance) || 0,
-          logo: ''
+        local.contas = contas.map(c => ({
+          nome:         c.name || 'Conta',
+          saldoInicial: parseFloat(c.balance) || 0,
+          sigla:        (c.name || 'C').slice(0, 2).toUpperCase(),
+          cor:          'bg-blue-600',
+          logo:         ''
         }));
       }
 
-      // Salva no localStorage
-      localStorage.setItem('cfm-v4-' + perfilChave, JSON.stringify(dadosLocais));
+      localStorage.setItem('cfm-v4-' + perfilChave, JSON.stringify(local));
 
-      // Se for o perfil ativo, atualiza D e re-renderiza sem reload
-      if (perfilChave === perfilAtual) {
-        // D é uma variável global do app principal
-        if (typeof D !== 'undefined') {
-          // Copia os campos atualizados para o D global
-          Object.assign(D, dadosLocais);
-        }
-        if (typeof render === 'function') {
-          render();
-          console.log('✅ Dados atualizados do Supabase e tela re-renderizada');
-        }
-      }
+      // Atualiza D e re-renderiza sem reload
+      if (typeof D !== 'undefined') Object.assign(D, local);
+      if (typeof render === 'function') { render(); console.log('✅ Tela atualizada do Supabase'); }
+
     } catch(e) {
-      console.error('❌ Erro em baixarDadosDoSupabase:', e.message);
+      console.error('❌ Erro ao baixar:', e.message);
     }
   }
 
-
-  function setupHooks() {
-    const originalPersistir = window.persistir;
-    window.persistir = function() {
-      if (originalPersistir) originalPersistir.call(this);
-      sincronizar();
-    };
-    console.log('🔗 Hook em persistir() instalado');
-  }
-
-  async function sincronizar() {
-    if (!navigator.onLine || !window.cfmSyncClient) return;
-
-    const agora = Date.now();
-    if (agora - ultimaSincronizacao < 1000) return;
-    ultimaSincronizacao = agora;
-
-    try {
-      // Sempre lê o perfil ativo atual (pode ter mudado desde o iniciarSync)
-      const perfilVivo = (typeof perfil !== 'undefined' && perfil)
-        ? perfil
-        : (localStorage.getItem('cfm-perfil-ativo') || 'pessoal');
-      perfilAtual = perfilVivo;
-
-      const profileId = PROFILE_IDS[perfilAtual];
-      if (!profileId) return;
-
-      const dados = JSON.parse(localStorage.getItem('cfm-v4-' + perfilAtual) || '{}');
-      if (!dados || Object.keys(dados).length === 0) return;
-
-      if (dados.lanc) await sincronizarTransacoes(profileId, dados.lanc);
-      if (dados.contas) await sincronizarContas(profileId, dados.contas);
-
-      console.log('✅ Sync concluído!');
-    } catch (error) {
-      console.error('❌ Erro sync:', error);
-    }
-  }
-
-  async function sincronizarTransacoes(profileId, lancamentos) {
-    for (const [mes, transacoes] of Object.entries(lancamentos)) {
-      if (!Array.isArray(transacoes)) continue;
-      for (let i = 0; i < transacoes.length; i++) {
-        const tx = transacoes[i];
-        try {
-          const mesNum = String(mes).padStart(2, '0');
-          // ID único baseado no perfil + mês + índice + descrição
-          const txId = profileId + '-' + mes + '-' + i + '-' + (tx.desc || '').replace(/[^a-zA-Z0-9]/g, '').substring(0, 20);
-          const { error } = await window.cfmSyncClient.from('transactions').upsert([{
-            id: txId,
-            profile_id: profileId,
-            type: tx.tipo === 'receita' ? 'income' : 'expense',
-            category: tx.cat || 'Sem categoria',
-            subcategory: tx.sub || '',
-            description: tx.desc || '',
-            amount: parseFloat(tx.valor) || 0,
-            date: '2026-' + mesNum + '-01',
-            notes: tx.conta ? 'Conta: ' + tx.conta : '',
-            updated_at: new Date().toISOString()
-          }], { onConflict: 'id' });
-          if (error) console.error('❌ Tx erro:', error.message);
-          else console.log('✅ Tx:', tx.desc);
-        } catch(e) { console.error('❌', e.message); }
-      }
-    }
-  }
-
-  async function sincronizarContas(profileId, contas) {
-    if (!Array.isArray(contas)) return;
-    for (const conta of contas) {
-      try {
-        const contaId = profileId + '-conta-' + (conta.nome || '').replace(/[^a-zA-Z0-9]/g, '').substring(0, 20);
-        const { error } = await window.cfmSyncClient.from('accounts').upsert([{
-          id: contaId,
-          profile_id: profileId,
-          name: conta.nome || 'Sem nome',
-          type: 'bank',
-          balance: parseFloat(conta.saldo) || 0,
-          updated_at: new Date().toISOString()
-        }], { onConflict: 'id' });
-        if (error) console.error('❌ Conta erro:', error.message);
-        else console.log('✅ Conta:', conta.nome);
-      } catch(e) { console.error('❌', e.message); }
-    }
-  }
-
-  window.addEventListener('online', () => sincronizar());
-
-  window.CFMSyncStatus = function() {
-    return { online: navigator.onLine, perfil: perfilAtual, cliente: !!window.cfmSyncClient, timestamp: new Date().toLocaleString('pt-BR') };
-  };
-
-  window.CFMSyncAgora = function() {
-    console.log('🔄 Sincronizando agora...');
-    return sincronizar();
-  };
-
-  // Chamado quando o usuário troca de perfil — reinicia polling para o perfil correto
+  // ── API pública ──────────────────────────────────────────────────────────────
   window.CFMSyncTrocarPerfil = function(novoPerfil) {
-    perfilAtual = novoPerfil;
-    const profileId = PROFILE_IDS[novoPerfil];
-    if (!profileId || !window.cfmSyncClient) return;
-    console.log('🔄 Sync: trocando para perfil', novoPerfil);
+    console.log('🔄 Trocando sync para perfil:', novoPerfil);
+    ultimoSync = 0;
     // Reinicia o polling para o novo perfil
-    setupRealtimeListeners(profileId);
-    // Sincroniza imediatamente
-    sincronizar();
+    iniciarPolling();
   };
 
-  // Inicia após o DOM carregar
+  window.CFMSyncAgora   = () => sincronizar();
+  window.CFMSyncStatus  = () => ({
+    online: navigator.onLine,
+    perfil: perfilAtivo(),
+    syncing,
+    ultimoSync: new Date(ultimoSync).toLocaleTimeString('pt-BR')
+  });
+
+  // ── boot ────────────────────────────────────────────────────────────────────
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', iniciarSync);
   } else {
-    setTimeout(iniciarSync, 1000);
+    setTimeout(iniciarSync, 800);
   }
 
-  console.log('✅ CFM Sync carregado (CDN mode)');
+  console.log('✅ CFM Sync v2 carregado');
 })();
 </script>
+
 
 </body>
 </html>
