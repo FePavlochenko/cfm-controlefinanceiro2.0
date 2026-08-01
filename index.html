@@ -459,7 +459,7 @@ function migrar(d,p){
 
 // ===== PERFIL + NAV =====
 function selecionarPerfil(p){
-  perfil=p; D=migrar(carregar(p),p); persistir();
+  perfil=p; D=migrar(carregar(p),p); localStorage.setItem('cfm-perfil-ativo', p); persistir();
   document.getElementById('tela-perfil').classList.add('hidden');
   const app=document.getElementById('app');app.classList.remove('hidden');app.classList.add('flex');
   montarNav();atualizarPills();irPara('resumo');
@@ -1453,7 +1453,15 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
       }
 
       if (!txs || txs.length === 0) {
-        console.log('📭 Nenhuma transação no Supabase');
+        console.log('📭 Nenhuma transação no Supabase - mantendo dados locais');
+        return;
+      }
+
+      // Só atualiza localStorage se o Supabase tiver dados MAIS RECENTES
+      const dadosLocaisAtual = JSON.parse(localStorage.getItem('cfm-v4-' + perfil) || '{}');
+      const totalLocal = dadosLocaisAtual.lanc ? Object.values(dadosLocaisAtual.lanc).flat().length : 0;
+      if (txs.length < totalLocal) {
+        console.log('⚠️ Supabase tem menos dados que local - mantendo dados locais');
         return;
       }
 
