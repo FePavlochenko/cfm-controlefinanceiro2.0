@@ -1398,15 +1398,41 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
   function setupRealtimeListeners(profileId) {
     if (!window.cfmSyncClient) return;
 
-    window.cfmSyncClient
-      .channel('cfm-changes-' + profileId)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions', filter: 'profile_id=eq.' + profileId }, async (payload) => {
-        console.log('📡 Mudança recebida de outro device!', payload.eventType);
-        await baixarDadosDoSupabase(profileId);
-      })
-      .subscribe((status) => {
-        console.log('📡 Realtime status:', status);
-      });
+    let ultimoUpdatedAt = null;
+
+    async function checarMudancas() {
+      if (!window.cfmSyncClient || !navigator.onLine) return;
+      try {
+        const { data, error } = await window.cfmSyncClient
+          .from('transactions')
+          .select('updated_at')
+          .eq('profile_id', profileId)
+          .order('updated_at', { ascending: false })
+          .limit(1);
+
+        if (error || !data || data.length === 0) return;
+
+        const novoUpdatedAt = data[0].updated_at;
+
+        if (ultimoUpdatedAt === null) {
+          ultimoUpdatedAt = novoUpdatedAt;
+          console.log('📡 Polling iniciado:', novoUpdatedAt);
+          return;
+        }
+
+        if (novoUpdatedAt !== ultimoUpdatedAt) {
+          console.log('📡 Mudança detectada! Baixando dados...');
+          ultimoUpdatedAt = novoUpdatedAt;
+          await baixarDadosDoSupabase(profileId);
+        }
+      } catch(e) {
+        console.warn('Erro no polling:', e.message);
+      }
+    }
+
+    checarMudancas();
+    setInterval(checarMudancas, 10000);
+    console.log('Polling ativo (10s)');
   }
 
   async function baixarDadosDoSupabase(profileId) {
