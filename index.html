@@ -1540,10 +1540,14 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
   async function sincronizarTransacoes(profileId, lancamentos) {
     for (const [mes, transacoes] of Object.entries(lancamentos)) {
       if (!Array.isArray(transacoes)) continue;
-      for (const tx of transacoes) {
+      for (let i = 0; i < transacoes.length; i++) {
+        const tx = transacoes[i];
         try {
           const mesNum = String(mes).padStart(2, '0');
-          const { error } = await window.cfmSyncClient.from('transactions').insert([{
+          // ID único baseado no perfil + mês + índice + descrição
+          const txId = profileId + '-' + mes + '-' + i + '-' + (tx.desc || '').replace(/[^a-zA-Z0-9]/g, '').substring(0, 20);
+          const { error } = await window.cfmSyncClient.from('transactions').upsert([{
+            id: txId,
             profile_id: profileId,
             type: tx.tipo === 'receita' ? 'income' : 'expense',
             category: tx.cat || 'Sem categoria',
@@ -1553,7 +1557,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
             date: '2026-' + mesNum + '-01',
             notes: tx.conta ? 'Conta: ' + tx.conta : '',
             updated_at: new Date().toISOString()
-          }]);
+          }], { onConflict: 'id' });
           if (error) console.error('❌ Tx erro:', error.message);
           else console.log('✅ Tx:', tx.desc);
         } catch(e) { console.error('❌', e.message); }
@@ -1565,13 +1569,15 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
     if (!Array.isArray(contas)) return;
     for (const conta of contas) {
       try {
-        const { error } = await window.cfmSyncClient.from('accounts').insert([{
+        const contaId = profileId + '-conta-' + (conta.nome || '').replace(/[^a-zA-Z0-9]/g, '').substring(0, 20);
+        const { error } = await window.cfmSyncClient.from('accounts').upsert([{
+          id: contaId,
           profile_id: profileId,
           name: conta.nome || 'Sem nome',
           type: 'bank',
           balance: parseFloat(conta.saldo) || 0,
           updated_at: new Date().toISOString()
-        }]);
+        }], { onConflict: 'id' });
         if (error) console.error('❌ Conta erro:', error.message);
         else console.log('✅ Conta:', conta.nome);
       } catch(e) { console.error('❌', e.message); }
