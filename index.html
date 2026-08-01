@@ -434,12 +434,6 @@ function migrar(d,p){
   if(!d)return dadosPadrao(p);
   const pad=dadosPadrao(p);
   if(d.nome===undefined)d.nome=p==='quitanda'?'Gonçalo Quitanda':'Fernando';
-  // Detecta categorias do perfil errado e substitui pelas corretas
-  // (Quitanda tem "Custos fixos", Fernando tem "Alimentação")
-  const temCatQuitanda = d.catsDespesa && d.catsDespesa.some(c=>(c.nome||'').includes('Custos fixos')||c.nome.includes('Mercadorias'));
-  const temCatFernando = d.catsDespesa && d.catsDespesa.some(c=>(c.nome||'').includes('Alimentação')||c.nome.includes('Moradia'));
-  if(p==='pessoal' && temCatQuitanda && !temCatFernando){ d.catsDespesa=pad.catsDespesa; d.catsReceita=pad.catsReceita; }
-  if(p==='quitanda' && temCatFernando && !temCatQuitanda){ d.catsDespesa=pad.catsDespesa; d.catsReceita=pad.catsReceita; }
   if(Array.isArray(d.cats)){d.catsDespesa=d.cats.map(c=>({nome:c,sub:[]}));delete d.cats;}
   if(!d.catsDespesa)d.catsDespesa=pad.catsDespesa;
   if(!d.catsReceita)d.catsReceita=pad.catsReceita;
@@ -465,20 +459,10 @@ function migrar(d,p){
 
 // ===== PERFIL + NAV =====
 function selecionarPerfil(p){
-  perfil=p;
-  // Garante que os dados carregados pertencem ao perfil correto
-  // Se houver dados de outro perfil misturados, usa os padrões
-  let dados = carregar(p);
-  if(dados && dados.nome && p==='pessoal' && dados.nome==='Gonçalo Quitanda') dados=null;
-  if(dados && dados.nome && p==='quitanda' && dados.nome==='Fernando') dados=null;
-  D=migrar(dados,p);
-  localStorage.setItem('cfm-perfil-ativo', p);
-  persistir();
+  perfil=p; D=migrar(carregar(p),p); localStorage.setItem('cfm-perfil-ativo', p); persistir();
   document.getElementById('tela-perfil').classList.add('hidden');
   const app=document.getElementById('app');app.classList.remove('hidden');app.classList.add('flex');
   montarNav();atualizarPills();irPara('resumo');
-  // Notifica o sync para trocar de perfil
-  if(typeof window.CFMSyncTrocarPerfil==='function') window.CFMSyncTrocarPerfil(p);
 }
 function voltarPerfil(){
   const app=document.getElementById('app');app.classList.add('hidden');app.classList.remove('flex');
@@ -529,8 +513,52 @@ function render(){
 function renderRanking(total){
   const ord=agrupar('despesa');
   document.getElementById('ranking-cat').innerHTML=ord.map(([cat,v],i)=>{const pct=total?v/total*100:0;
-    return `<div><div class="flex justify-between text-xs mb-1"><span class="text-gray-600 font-medium">${cat}</span><span class="valor font-semibold text-gray-700">${fmt(v)} (${pct.toFixed(1).replace('.',',')}%)</span></div><div class="w-full bg-gray-100 h-2 rounded-full overflow-hidden"><div class="${CORES[i%CORES.length]} h-full rounded-full barra-anim" style="width:${pct}%"></div></div></div>`;}).join('');
+    return `<div class="cursor-pointer hover:bg-gray-50 rounded-lg p-1 -mx-1 transition" onclick="abrirEdicaoRapidaCat('${cat.replace(/'/g,"\\'")}')">
+      <div class="flex justify-between text-xs mb-1">
+        <span class="text-gray-600 font-medium">${cat}</span>
+        <span class="valor font-semibold text-gray-700">${fmt(v)} (${pct.toFixed(1).replace('.',',')}%) <i class="fas fa-pen text-gray-300 text-[10px] ml-1"></i></span>
+      </div>
+      <div class="w-full bg-gray-100 h-2 rounded-full overflow-hidden"><div class="${CORES[i%CORES.length]} h-full rounded-full barra-anim" style="width:${pct}%"></div></div>
+    </div>`;}).join('');
   document.getElementById('ranking-vazio').classList.toggle('hidden',ord.length>0);
+}
+function abrirEdicaoRapidaCat(cat){
+  // Pega todas as transações da categoria no mês atual
+  const idxs=[];
+  const lancs=getLanc();
+  lancs.forEach((l,i)=>{if(l.cat===cat)idxs.push(i);});
+  if(!idxs.length)return;
+  const catObj=D.catsDespesa.find(c=>c.nome===cat)||{sub:[]};
+  const todasCats=[...D.catsDespesa,...D.catsReceita];
+  // Monta modal inline no ranking
+  const box=document.getElementById('ranking-cat');
+  const div=document.createElement('div');
+  div.className='bg-papel border-2 border-folha rounded-xl p-3 mb-3 anima-pop';
+  div.innerHTML=`<div class="flex justify-between items-center mb-2">
+    <p class="text-xs font-bold text-gray-700">Editar categoria: ${cat}</p>
+    <button onclick="this.closest('.bg-papel').remove()" class="text-gray-400 text-xs"><i class="fas fa-xmark"></i></button>
+  </div>
+  <p class="text-[11px] text-gray-500 mb-2">${idxs.length} lançamento(s) nesta categoria</p>
+  <div class="space-y-1 mb-3 max-h-36 overflow-y-auto">
+    ${idxs.map(i=>`<div class="flex items-center justify-between bg-white rounded-lg px-2 py-1.5 text-xs">
+      <span class="truncate flex-1 text-gray-700">${lancs[i].desc}</span>
+      <span class="valor font-semibold text-goiaba ml-2 shrink-0">−${fmt(lancs[i].valor)}</span>
+    </div>`).join('')}
+  </div>
+  <p class="text-[11px] text-gray-500 mb-1">Mover todos para categoria:</p>
+  <div class="flex gap-2">
+    <select id="edicao-rapida-cat" class="flex-1 bg-white border border-gray-200 rounded-lg py-1.5 px-2 text-xs">
+      ${todasCats.map(c=>`<option ${c.nome===cat?'selected':''}>${c.nome}</option>`).join('')}
+    </select>
+    <button onclick="aplicarEdicaoRapidaCat(${JSON.stringify(idxs)})" class="bg-mata text-papel text-xs font-bold px-3 rounded-lg">Aplicar</button>
+  </div>`;
+  box.prepend(div);
+}
+function aplicarEdicaoRapidaCat(idxs){
+  const novaCat=document.getElementById('edicao-rapida-cat').value;
+  const catObj=D.catsDespesa.find(c=>c.nome===novaCat)||D.catsReceita.find(c=>c.nome===novaCat)||{sub:[]};
+  idxs.forEach(i=>{if(D.lanc[mesAtual][i]){D.lanc[mesAtual][i].cat=novaCat;D.lanc[mesAtual][i].sub='';}});
+  persistir();render();toast('Categoria atualizada em '+idxs.length+' lançamento(s)');
 }
 function iconeBadge(obj,tam='w-8 h-8',txtSize='text-xs'){
   if(obj.logo||obj.foto){return `<img src="${obj.logo||obj.foto}" class="${tam} rounded-full object-cover border border-gray-200">`;}
@@ -539,17 +567,51 @@ function iconeBadge(obj,tam='w-8 h-8',txtSize='text-xs'){
 function renderLancamentos(){
   const q=(document.getElementById('busca').value||'').toLowerCase();
   const itens=getLanc().map((l,idx)=>({l,idx})).filter(({l})=>!q||l.desc.toLowerCase().includes(q)||l.cat.toLowerCase().includes(q));
-  document.getElementById('lista-lanc').innerHTML=itens.map(({l,idx})=>{
+  const lista=document.getElementById('lista-lanc');
+  // Cabeçalho com "selecionar tudo" se houver itens
+  const cabecalho=itens.length>0?`<div class="flex items-center justify-between py-1.5 border-b border-gray-100 mb-1">
+    <label class="flex items-center gap-1.5 text-[11px] text-gray-400 cursor-pointer select-none">
+      <input type="checkbox" id="chk-todos" onchange="toggleSelecionarTodos(this.checked)" class="w-3.5 h-3.5 accent-goiaba">
+      Selecionar tudo
+    </label>
+    <button id="btn-excluir-selecionados" onclick="excluirSelecionados()" class="hidden text-[11px] text-goiaba font-semibold hover:opacity-70"><i class="fas fa-trash mr-1"></i>Excluir selecionados</button>
+  </div>`:'';
+  lista.innerHTML=cabecalho+itens.map(({l,idx})=>{
     const cta=D.contas.find(c=>c.nome===l.conta)||{cor:'bg-gray-400',sigla:'?'};
-    return `<div class="flex justify-between items-center py-2.5">
-      <div class="flex items-center space-x-2 min-w-0">${iconeBadge(cta,'w-6 h-6','text-[9px]')}
-        <div class="min-w-0"><p class="text-sm font-medium text-gray-700 truncate">${l.desc}</p>
-        <p class="text-[11px] text-gray-400 truncate">${l.cat}${l.sub?' › '+l.sub:''}${l.cartao?' · 💳 '+l.cartao:''}</p></div></div>
-      <div class="flex items-center space-x-2 ml-2 shrink-0"><span class="valor text-sm font-semibold ${l.tipo==='despesa'?'text-goiaba':'text-folha'}">${l.tipo==='despesa'?'−':'+'} ${fmt(l.valor)}</span>
-        <button onclick="editarLancInline(${idx})" class="text-gray-300 hover:text-folha text-xs"><i class="fas fa-pen"></i></button>
-        <button onclick="excluirLancamento(${idx})" class="text-gray-300 hover:text-goiaba text-xs"><i class="fas fa-trash"></i></button></div></div>`;
+    return `<div class="flex items-center py-2 gap-2" data-idx="${idx}">
+      <input type="checkbox" class="chk-lanc w-3.5 h-3.5 accent-goiaba shrink-0 mt-0.5" onchange="atualizarBtnExcluir()" data-idx="${idx}">
+      <div class="flex justify-between items-center flex-1 min-w-0">
+        <div class="flex items-center space-x-2 min-w-0">${iconeBadge(cta,'w-6 h-6','text-[9px]')}
+          <div class="min-w-0"><p class="text-sm font-medium text-gray-700 truncate">${l.desc}</p>
+          <p class="text-[11px] text-gray-400 truncate">${l.cat}${l.sub?' › '+l.sub:''}${l.cartao?' · 💳 '+l.cartao:''}</p></div></div>
+        <div class="flex items-center space-x-2 ml-2 shrink-0"><span class="valor text-sm font-semibold ${l.tipo==='despesa'?'text-goiaba':'text-folha'}">${l.tipo==='despesa'?'−':'+'} ${fmt(l.valor)}</span>
+          <button onclick="editarLancInline(${idx})" class="text-gray-300 hover:text-folha text-xs"><i class="fas fa-pen"></i></button>
+          <button onclick="excluirLancamento(${idx})" class="text-gray-300 hover:text-goiaba text-xs"><i class="fas fa-trash"></i></button></div>
+      </div>
+    </div>`;
   }).join('');
   document.getElementById('lanc-vazio').classList.toggle('hidden',itens.length>0);
+}
+function toggleSelecionarTodos(checked){
+  document.querySelectorAll('.chk-lanc').forEach(c=>c.checked=checked);
+  atualizarBtnExcluir();
+}
+function atualizarBtnExcluir(){
+  const btn=document.getElementById('btn-excluir-selecionados');
+  const selecionados=document.querySelectorAll('.chk-lanc:checked');
+  const chkTodos=document.getElementById('chk-todos');
+  const todos=document.querySelectorAll('.chk-lanc');
+  if(btn){btn.classList.toggle('hidden',selecionados.length===0);if(selecionados.length>0)btn.innerHTML=`<i class="fas fa-trash mr-1"></i>Excluir ${selecionados.length}`;}
+  if(chkTodos)chkTodos.checked=todos.length>0&&selecionados.length===todos.length;
+}
+function excluirSelecionados(){
+  const selecionados=[...document.querySelectorAll('.chk-lanc:checked')].map(c=>parseInt(c.dataset.idx));
+  if(!selecionados.length)return;
+  askConfirm(`Excluir ${selecionados.length} lançamento(s)?`,()=>{
+    // Remove do maior índice para o menor para não deslocar
+    selecionados.sort((a,b)=>b-a).forEach(i=>D.lanc[mesAtual].splice(i,1));
+    persistir();render();toast(`${selecionados.length} lançamento(s) excluído(s)`);
+  });
 }
 
 // ===== EDITAR LANÇAMENTO INLINE =====
@@ -656,9 +718,16 @@ function salvarNovaConta(){
 function excluirConta(i){askConfirm('Excluir conta "'+D.contas[i].nome+'"?',()=>{D.contas.splice(i,1);persistir();render();});}
 function renderConfContas(){
   const cont=document.getElementById('conf-contas');if(!cont)return;
-  cont.innerHTML=D.contas.map((c,i)=>`<div class="py-2"><div class="flex justify-between items-center"><div class="flex items-center space-x-3 min-w-0">${iconeBadge(c,'w-8 h-8','text-xs')}<div class="min-w-0"><p class="text-sm font-medium truncate">${c.nome}</p><p class="valor text-[11px] text-gray-400">${fmt(c.saldoInicial||0)}</p></div></div>
+  // Calcula saldo real (igual ao menu Contas)
+  const por={};getLanc().forEach(l=>{if(!por[l.conta])por[l.conta]={r:0,d:0};l.tipo==='receita'?por[l.conta].r+=l.valor:por[l.conta].d+=l.valor;});
+  cont.innerHTML=D.contas.map((c,i)=>{
+    const m=por[c.nome]||{r:0,d:0},saldo=(c.saldoInicial||0)+m.r-m.d;
+    return `<div class="py-2"><div class="flex justify-between items-center"><div class="flex items-center space-x-3 min-w-0">${iconeBadge(c,'w-8 h-8','text-xs')}<div class="min-w-0"><p class="text-sm font-medium truncate">${c.nome}</p>
+      <p class="valor text-[11px] text-gray-400">Saldo inicial: ${fmt(c.saldoInicial||0)}</p>
+      <p class="valor text-xs font-semibold ${saldo>=0?'text-folha':'text-goiaba'}">Saldo atual: ${fmt(saldo)}</p></div></div>
     <div class="flex items-center space-x-3 shrink-0 ml-2"><button onclick="menuIconeConta(${i})" class="text-gray-300 hover:text-folha text-xs" title="Personalizar"><i class="fas fa-palette"></i></button>
-    <button onclick="excluirConta(${i})" class="text-gray-300 hover:text-goiaba text-xs"><i class="fas fa-trash"></i></button></div></div><div id="conf-editor-conta-${i}"></div></div>`).join('');
+    <button onclick="excluirConta(${i})" class="text-gray-300 hover:text-goiaba text-xs"><i class="fas fa-trash"></i></button></div></div><div id="conf-editor-conta-${i}"></div></div>`;
+  }).join('');
 }
 
 // ===== CARTÕES =====
@@ -844,18 +913,21 @@ function gerarSugestoes(){
 
 // ===== RESERVA (inline, pre-opções escondidas, nome editável) =====
 function renderReserva(){
-  const r=D.reserva,pct=r.meta?Math.min(r.atual/r.meta*100,100):0;
+  const r=D.reserva,pct=(r.meta&&r.meta>0)?Math.min(r.atual/r.meta*100,100):0;
   const marcos=[25,50,75,100],marcoAtual=marcos.filter(m=>pct>=m).pop()||0;
   const cfg=document.getElementById('reserva-config');
   const usaPreset=RESERVA_PRESET.some(o=>o.nome===r.onde);
   cfg.innerHTML=`
     <div class="flex justify-between items-center mb-1">
       <input class="edit-inline text-sm font-bold w-40" value="${r.nomeReserva||'Minha reserva'}" onchange="D.reserva.nomeReserva=this.value;persistir()">
-      <button onclick="toggleReservaOnde()" class="text-[11px] text-folha font-semibold">Onde guardo <i class="fas fa-chevron-down"></i></button>
+      <div class="flex items-center gap-3">
+        <button onclick="zerarReserva()" class="text-[11px] text-goiaba font-semibold hover:opacity-70" title="Zerar reserva"><i class="fas fa-rotate-left mr-1"></i>Zerar</button>
+        <button onclick="toggleReservaOnde()" class="text-[11px] text-folha font-semibold">Onde guardo <i class="fas fa-chevron-down"></i></button>
+      </div>
     </div>
     <div class="flex justify-between items-end mb-4">
-      <div><p class="text-[11px] text-gray-400">Guardado</p><p class="valor text-2xl font-bold text-folha">${fmt(r.atual)}</p></div>
-      <div class="text-right"><p class="text-[11px] text-gray-400">Meta <button onclick="editarReservaCampoInline('meta',this)" class="text-folha"><i class="fas fa-pen text-[10px]"></i></button></p><p class="valor text-lg font-semibold">${fmt(r.meta)}</p></div>
+      <div><p class="text-[11px] text-gray-400">Guardado</p><p class="valor text-2xl font-bold text-folha">${(r.meta>0||r.atual>0)?fmt(r.atual):'R$ 0,00'}</p></div>
+      <div class="text-right"><p class="text-[11px] text-gray-400">Meta <button onclick="editarReservaCampoInline('meta',this)" class="text-folha"><i class="fas fa-pen text-[10px]"></i></button></p><p class="valor text-lg font-semibold">${fmt(r.meta||0)}</p></div>
     </div>
     <div class="w-full bg-gray-100 h-4 rounded-full overflow-hidden mb-1"><div class="bg-folha h-full rounded-full barra-anim flex items-center justify-end pr-2" style="width:${pct}%">${pct>15?`<span class="text-[9px] text-white font-bold">${pct.toFixed(0)}%</span>`:''}</div></div>
     <div class="flex justify-between text-[10px] text-gray-400 mb-4">${marcos.map(m=>`<span class="${pct>=m?'text-folha font-bold':''}">${m>=100?'🏆':'●'} ${m}%</span>`).join('')}</div>
@@ -879,8 +951,22 @@ function toggleReservaOnde(){
 function editarReservaCampoInline(campo,el){
   const inp=document.createElement('input');inp.type='number';inp.step='0.01';inp.value=D.reserva[campo];inp.className='valor w-24 border-b border-folha outline-none text-sm';
   el.closest('div').appendChild(inp);inp.focus();
-  const salvar=()=>{const v=parseFloat(inp.value);if(v>=0)D.reserva[campo]=v;persistir();render();};
+  const salvar=()=>{
+    const v=parseFloat(inp.value);
+    if(!isNaN(v)&&v>=0){
+      D.reserva[campo]=v;
+      // Se zerando a meta, zera também o guardado (comportamento esperado)
+      if(campo==='meta'&&v===0){D.reserva.atual=0;D.reserva.historico=[];}
+    }
+    persistir();render();
+  };
   inp.addEventListener('blur',salvar);inp.addEventListener('keydown',e=>{if(e.key==='Enter')salvar();});
+}
+function zerarReserva(){
+  askConfirm('Zerar reserva (meta e valor guardado)?',()=>{
+    D.reserva.atual=0;D.reserva.meta=0;D.reserva.historico=[];
+    persistir();render();toast('Reserva zerada.');
+  });
 }
 function aportarReserva(){
   const v=parseFloat(document.getElementById('res-aporte').value);if(!v||v<=0){toast('Informe um valor.');return;}
@@ -1187,7 +1273,7 @@ async function parsePDF(file){
     importados=itens.map(it=>{const m=catMatch(it.desc,'despesa');return{...it,cat:m.cat,sub:m.sub};});
     mostrarRevisaoImport();
   }catch(err){
-    toast('Erro ao ler o PDF: '+err.message);
+    toast(err&&err.message&&err.message.toLowerCase().includes('password')?'PDF protegido por senha. Abra o arquivo, remova a senha (ou salve sem senha) e importe novamente.':'Erro ao ler o PDF: '+err.message);
     console.error(err);
   }
 }
@@ -1380,261 +1466,272 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
   display: none;
 "></div>
 
-<!-- Supabase via CDN -->
+<!-- Supabase via CDN (evita problemas com ESM import) -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 
-<!-- CFM Sync - versão corrigida -->
+<!-- Sync Hook - Sincroniza automaticamente com Supabase -->
 <script>
 (function() {
   const SUPABASE_URL = 'https://aiyptgdemugbapbfevcw.supabase.co';
   const SUPABASE_KEY = 'sb_publishable_QBtGEzIz3zlhH_9dtQql5g_sieiz0iO';
+
   const PROFILE_IDS = {
-    pessoal:  'bcc95e03-01a5-4f1a-b7a3-5b575781c428',
+    pessoal: 'bcc95e03-01a5-4f1a-b7a3-5b575781c428',
     quitanda: '138deb76-4a0b-40a6-a713-f2cadf2c5160'
   };
 
-  // ── estado interno ──────────────────────────────────────────────────────────
-  let syncClient       = null;
-  let ultimoSync       = 0;          // timestamp do último upsert enviado
-  let syncing          = false;       // trava para evitar execuções paralelas
-  let pollingInterval  = null;        // referência do setInterval atual
-  let ultimoUpdatedAt  = null;        // marca d'água do polling
+  let ultimaSincronizacao = 0;
+  let perfilAtual = null;
 
-  // ── helpers ─────────────────────────────────────────────────────────────────
-
-  // Retorna o perfil REALMENTE ativo agora (lê a variável global `perfil` do app)
-  function perfilAtivo() {
-    return (typeof perfil !== 'undefined' && perfil)
-      ? perfil
-      : (localStorage.getItem('cfm-perfil-ativo') || 'pessoal');
-  }
-
-  // Converte índice de mês JS (0-11) para data válida "YYYY-MM-01"
-  function mesParaData(mesIdx) {
-    const ano = new Date().getFullYear();
-    const mm  = String(parseInt(mesIdx, 10) + 1).padStart(2, '0'); // 0→01, 7→08
-    return `${ano}-${mm}-01`;
-  }
-
-  // ── inicialização ───────────────────────────────────────────────────────────
   function iniciarSync() {
-    if (!window.supabase) { console.error('❌ Supabase CDN não carregou'); return; }
-    syncClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-    window.cfmSyncClient = syncClient;
-    console.log('✅ CFM Sync iniciado');
-
-    hookPersistir();
-    iniciarPolling();
-  }
-
-  // ── hook em persistir() ─────────────────────────────────────────────────────
-  function hookPersistir() {
-    const orig = window.persistir;
-    window.persistir = function() {
-      if (orig) orig.call(this);
-      // Debounce: ignora se já houve sync há menos de 2s
-      const agora = Date.now();
-      if (agora - ultimoSync < 2000) return;
-      sincronizar();
-    };
-    console.log('🔗 Hook persistir() instalado');
-  }
-
-  // ── sync: envia localStorage → Supabase ─────────────────────────────────────
-  async function sincronizar() {
-    if (!syncClient || !navigator.onLine) return;
-    if (syncing) return;   // evita execuções paralelas
-    syncing = true;
-    ultimoSync = Date.now();
-
     try {
-      const p  = perfilAtivo();
-      const id = PROFILE_IDS[p];
-      if (!id) { syncing = false; return; }
+      perfilAtual = localStorage.getItem('cfm-perfil-ativo') || 'pessoal';
+      const profileId = PROFILE_IDS[perfilAtual];
 
-      const dados = JSON.parse(localStorage.getItem('cfm-v4-' + p) || '{}');
-      if (!dados || !dados.lanc) { syncing = false; return; }
-
-      // 1. Deleta TODAS as transações do perfil e reinserir
-      //    (estratégia simples e sem duplicação: substitui tudo)
-      await syncClient.from('transactions').delete().eq('profile_id', id);
-
-      // 2. Insere estado atual
-      const rows = [];
-      for (const [mesIdx, lista] of Object.entries(dados.lanc)) {
-        if (!Array.isArray(lista)) continue;
-        for (let i = 0; i < lista.length; i++) {
-          const tx = lista[i];
-          if (!tx) continue;
-          rows.push({
-            id:          id + '-' + mesIdx + '-' + i + '-' + (tx.desc||'').replace(/[^a-zA-Z0-9]/g,'').slice(0,16),
-            profile_id:  id,
-            type:        tx.tipo === 'receita' ? 'income' : 'expense',
-            category:    tx.cat  || 'Sem categoria',
-            subcategory: tx.sub  || '',
-            description: tx.desc || '',
-            amount:      parseFloat(tx.valor) || 0,
-            date:        mesParaData(mesIdx),   // ← data sempre válida
-            notes:       tx.conta ? 'Conta: ' + tx.conta : '',
-            updated_at:  new Date().toISOString()
-          });
-        }
+      if (!profileId) {
+        console.warn('⚠️ Perfil desconhecido:', perfilAtual);
+        return;
       }
 
-      if (rows.length > 0) {
-        const { error } = await syncClient.from('transactions').insert(rows);
-        if (error) console.error('❌ Insert erro:', error.message);
-        else console.log('✅ Sync OK:', rows.length, 'transações para', p);
+      if (!window.supabase) {
+        console.error('❌ Supabase CDN não carregou!');
+        return;
       }
 
-      // 3. Contas
-      if (Array.isArray(dados.contas)) {
-        await syncClient.from('accounts').delete().eq('profile_id', id);
-        const cRows = dados.contas.map(c => ({
-          id:         id + '-conta-' + (c.nome||'').replace(/[^a-zA-Z0-9]/g,'').slice(0,16),
-          profile_id: id,
-          name:       c.nome  || 'Conta',
-          type:       'bank',
-          balance:    parseFloat(c.saldoInicial || c.saldo) || 0,
-          updated_at: new Date().toISOString()
-        }));
-        if (cRows.length > 0) {
-          const { error } = await syncClient.from('accounts').insert(cRows);
-          if (error) console.error('❌ Contas erro:', error.message);
-        }
-      }
+      window.cfmSyncClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+      console.log('✅ CFM Sync iniciado para', perfilAtual, '|', profileId);
 
-      // Atualiza marca d'água para o polling não re-baixar o que acabamos de enviar
-      const { data: latest } = await syncClient
-        .from('transactions').select('updated_at')
-        .eq('profile_id', id).order('updated_at', { ascending: false }).limit(1);
-      if (latest && latest[0]) ultimoUpdatedAt = latest[0].updated_at;
+      setupRealtimeListeners(profileId);
+      setupHooks();
 
-    } catch(e) {
-      console.error('❌ Erro sync:', e.message);
-    } finally {
-      syncing = false;
+    } catch (error) {
+      console.error('❌ Erro ao inicializar sync:', error);
     }
   }
 
-  // ── polling: detecta mudanças de outro device ───────────────────────────────
-  function iniciarPolling() {
-    if (pollingInterval) clearInterval(pollingInterval);
-    ultimoUpdatedAt = null;
+  function setupRealtimeListeners(profileId) {
+    if (!window.cfmSyncClient) return;
 
-    async function checar() {
-      if (!syncClient || !navigator.onLine || syncing) return;
+    let ultimoUpdatedAt = null;
+
+    async function checarMudancas() {
+      if (!window.cfmSyncClient || !navigator.onLine) return;
       try {
-        const p  = perfilAtivo();
-        const id = PROFILE_IDS[p];
-        if (!id) return;
-
-        const { data, error } = await syncClient
-          .from('transactions').select('updated_at')
-          .eq('profile_id', id).order('updated_at', { ascending: false }).limit(1);
+        const { data, error } = await window.cfmSyncClient
+          .from('transactions')
+          .select('updated_at')
+          .eq('profile_id', profileId)
+          .order('updated_at', { ascending: false })
+          .limit(1);
 
         if (error || !data || data.length === 0) return;
-        const novo = data[0].updated_at;
+
+        const novoUpdatedAt = data[0].updated_at;
 
         if (ultimoUpdatedAt === null) {
-          ultimoUpdatedAt = novo;
+          ultimoUpdatedAt = novoUpdatedAt;
+          console.log('📡 Polling iniciado:', novoUpdatedAt);
           return;
         }
 
-        if (novo !== ultimoUpdatedAt) {
-          console.log('📡 Mudança remota detectada — baixando...');
-          ultimoUpdatedAt = novo;
-          await baixarDoSupabase(id, p);
+        if (novoUpdatedAt !== ultimoUpdatedAt) {
+          console.log('📡 Mudança de outro device detectada! Baixando dados...');
+          ultimoUpdatedAt = novoUpdatedAt;
+          await baixarDadosDoSupabase(profileId);
         }
       } catch(e) {
-        console.warn('⚠️ Polling erro:', e.message);
+        console.warn('Erro no polling:', e.message);
       }
     }
 
-    checar();
-    pollingInterval = setInterval(checar, 15000); // 15s é suficiente
-    console.log('📡 Polling ativo (15s)');
+    checarMudancas();
+    setInterval(checarMudancas, 10000);
+    console.log('Polling ativo (10s)');
   }
 
-  // ── download: Supabase → localStorage + render ──────────────────────────────
-  async function baixarDoSupabase(profileId, perfilChave) {
-    // Só baixa se ainda for o perfil ativo
-    if (perfilChave !== perfilAtivo()) return;
-
+  async function baixarDadosDoSupabase(profileId) {
+    if (!window.cfmSyncClient) return;
     try {
-      const { data: txs }    = await syncClient.from('transactions').select('*').eq('profile_id', profileId);
-      const { data: contas } = await syncClient.from('accounts').select('*').eq('profile_id', profileId);
+      // Descobre qual chave de perfil corresponde ao profileId
+      const perfilChave = Object.entries(PROFILE_IDS).find(([k, v]) => v === profileId)?.[0];
+      if (!perfilChave) return;
 
-      const local = JSON.parse(localStorage.getItem('cfm-v4-' + perfilChave) || '{}');
+      // Busca transações
+      const { data: txs, error: txErr } = await window.cfmSyncClient
+        .from('transactions')
+        .select('*')
+        .eq('profile_id', profileId);
 
-      // Reconstrói lançamentos
+      if (txErr) { console.error('❌ Erro ao baixar transações:', txErr.message); return; }
+
+      // Busca contas
+      const { data: contas, error: contaErr } = await window.cfmSyncClient
+        .from('accounts')
+        .select('*')
+        .eq('profile_id', profileId);
+
+      if (contaErr) { console.error('❌ Erro ao baixar contas:', contaErr.message); return; }
+
+      // Pega os dados locais atuais para preservar config (categorias, reserva, etc)
+      const dadosLocais = JSON.parse(localStorage.getItem('cfm-v4-' + perfilChave) || '{}');
+
+      // Reconstrói os lançamentos por mês a partir das transações do Supabase
       if (txs && txs.length > 0) {
-        const lanc = {};
+        const lancPorMes = {};
         txs.forEach(tx => {
+          // Extrai o mês da data (ex: "2026-07-01" → 6, índice 0-based)
           const partes = (tx.date || '').split('-');
-          const mes    = partes.length >= 2 ? parseInt(partes[1], 10) - 1 : new Date().getMonth();
-          if (!lanc[mes]) lanc[mes] = [];
-          lanc[mes].push({
-            desc:  tx.description || '',
+          const mes = partes.length >= 2 ? parseInt(partes[1], 10) - 1 : new Date().getMonth();
+          if (!lancPorMes[mes]) lancPorMes[mes] = [];
+          lancPorMes[mes].push({
+            desc: tx.description || '',
             valor: parseFloat(tx.amount) || 0,
-            tipo:  tx.type === 'income' ? 'receita' : 'despesa',
-            conta: (tx.notes || '').replace('Conta: ', ''),
-            cat:   tx.category    || '',
-            sub:   tx.subcategory || '',
+            tipo: tx.type === 'income' ? 'receita' : 'despesa',
+            conta: tx.notes ? tx.notes.replace('Conta: ', '') : '',
+            cat: tx.category || '',
+            sub: tx.subcategory || '',
             cartao: ''
           });
         });
-        local.lanc = lanc;
+        dadosLocais.lanc = lancPorMes;
       }
 
+      // Reconstrói contas — preserva logo/cor/sigla do localStorage
       if (contas && contas.length > 0) {
-        local.contas = contas.map(c => ({
-          nome:         c.name || 'Conta',
-          saldoInicial: parseFloat(c.balance) || 0,
-          sigla:        (c.name || 'C').slice(0, 2).toUpperCase(),
-          cor:          'bg-blue-600',
-          logo:         ''
-        }));
+        const contasAntes = dadosLocais.contas || [];
+        dadosLocais.contas = contas.map(c => {
+          const ex = contasAntes.find(lc => lc.nome === c.name);
+          return {
+            nome:         c.name || 'Conta',
+            saldoInicial: parseFloat(c.balance) || 0,
+            sigla:        ex?.sigla || (c.name || 'C').slice(0, 2).toUpperCase(),
+            cor:          ex?.cor   || 'bg-blue-600',
+            logo:         ex?.logo  || ''
+          };
+        });
       }
 
-      localStorage.setItem('cfm-v4-' + perfilChave, JSON.stringify(local));
+      // Salva no localStorage
+      localStorage.setItem('cfm-v4-' + perfilChave, JSON.stringify(dadosLocais));
 
-      // Atualiza D e re-renderiza sem reload
-      if (typeof D !== 'undefined') Object.assign(D, local);
-      if (typeof render === 'function') { render(); console.log('✅ Tela atualizada do Supabase'); }
-
+      // Se for o perfil ativo, atualiza D e re-renderiza sem reload
+      if (perfilChave === perfilAtual) {
+        // D é uma variável global do app principal
+        if (typeof D !== 'undefined') {
+          // Copia os campos atualizados para o D global
+          Object.assign(D, dadosLocais);
+        }
+        if (typeof render === 'function') {
+          render();
+          console.log('✅ Dados atualizados do Supabase e tela re-renderizada');
+        }
+      }
     } catch(e) {
-      console.error('❌ Erro ao baixar:', e.message);
+      console.error('❌ Erro em baixarDadosDoSupabase:', e.message);
     }
   }
 
-  // ── API pública ──────────────────────────────────────────────────────────────
-  window.CFMSyncTrocarPerfil = function(novoPerfil) {
-    console.log('🔄 Trocando sync para perfil:', novoPerfil);
-    ultimoSync = 0;
-    // Reinicia o polling para o novo perfil
-    iniciarPolling();
+
+  function setupHooks() {
+    const originalPersistir = window.persistir;
+    window.persistir = function() {
+      if (originalPersistir) originalPersistir.call(this);
+      sincronizar();
+    };
+    console.log('🔗 Hook em persistir() instalado');
+  }
+
+  async function sincronizar() {
+    if (!navigator.onLine || !window.cfmSyncClient) return;
+
+    const agora = Date.now();
+    if (agora - ultimaSincronizacao < 1000) return;
+    ultimaSincronizacao = agora;
+
+    try {
+      const profileId = PROFILE_IDS[perfilAtual || 'pessoal'];
+      if (!profileId) return;
+
+      const dados = JSON.parse(localStorage.getItem('cfm-v4-' + perfilAtual) || '{}');
+      if (!dados || Object.keys(dados).length === 0) return;
+
+      if (dados.lanc) await sincronizarTransacoes(profileId, dados.lanc);
+      if (dados.contas) await sincronizarContas(profileId, dados.contas);
+
+      console.log('✅ Sync concluído!');
+    } catch (error) {
+      console.error('❌ Erro sync:', error);
+    }
+  }
+
+  async function sincronizarTransacoes(profileId, lancamentos) {
+    for (const [mes, transacoes] of Object.entries(lancamentos)) {
+      if (!Array.isArray(transacoes)) continue;
+      for (let i = 0; i < transacoes.length; i++) {
+        const tx = transacoes[i];
+        try {
+          const mesNum = String(mes).padStart(2, '0');
+          // ID único baseado no perfil + mês + índice + descrição
+          const txId = profileId + '-' + mes + '-' + i + '-' + (tx.desc || '').replace(/[^a-zA-Z0-9]/g, '').substring(0, 20);
+          const { error } = await window.cfmSyncClient.from('transactions').upsert([{
+            id: txId,
+            profile_id: profileId,
+            type: tx.tipo === 'receita' ? 'income' : 'expense',
+            category: tx.cat || 'Sem categoria',
+            subcategory: tx.sub || '',
+            description: tx.desc || '',
+            amount: parseFloat(tx.valor) || 0,
+            date: '2026-' + mesNum + '-01',
+            notes: tx.conta ? 'Conta: ' + tx.conta : '',
+            updated_at: new Date().toISOString()
+          }], { onConflict: 'id' });
+          if (error) console.error('❌ Tx erro:', error.message);
+          else console.log('✅ Tx:', tx.desc);
+        } catch(e) { console.error('❌', e.message); }
+      }
+    }
+  }
+
+  async function sincronizarContas(profileId, contas) {
+    if (!Array.isArray(contas)) return;
+    for (const conta of contas) {
+      try {
+        const contaId = profileId + '-conta-' + (conta.nome || '').replace(/[^a-zA-Z0-9]/g, '').substring(0, 20);
+        const { error } = await window.cfmSyncClient.from('accounts').upsert([{
+          id: contaId,
+          profile_id: profileId,
+          name: conta.nome || 'Sem nome',
+          type: 'bank',
+          balance: parseFloat(conta.saldo) || 0,
+          updated_at: new Date().toISOString()
+        }], { onConflict: 'id' });
+        if (error) console.error('❌ Conta erro:', error.message);
+        else console.log('✅ Conta:', conta.nome);
+      } catch(e) { console.error('❌', e.message); }
+    }
+  }
+
+  window.addEventListener('online', () => sincronizar());
+
+  window.CFMSyncStatus = function() {
+    return { online: navigator.onLine, perfil: perfilAtual, cliente: !!window.cfmSyncClient, timestamp: new Date().toLocaleString('pt-BR') };
   };
 
-  window.CFMSyncAgora   = () => sincronizar();
-  window.CFMSyncStatus  = () => ({
-    online: navigator.onLine,
-    perfil: perfilAtivo(),
-    syncing,
-    ultimoSync: new Date(ultimoSync).toLocaleTimeString('pt-BR')
-  });
+  window.CFMSyncAgora = function() {
+    console.log('🔄 Sincronizando agora...');
+    return sincronizar();
+  };
 
-  // ── boot ────────────────────────────────────────────────────────────────────
+  // Inicia após o DOM carregar
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', iniciarSync);
   } else {
-    setTimeout(iniciarSync, 800);
+    setTimeout(iniciarSync, 1000);
   }
 
-  console.log('✅ CFM Sync v2 carregado');
+  console.log('✅ CFM Sync carregado (CDN mode)');
 })();
 </script>
-
 
 </body>
 </html>
