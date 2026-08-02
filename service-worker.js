@@ -1,28 +1,20 @@
-// CFM Service Worker v1.0
-// Cache versioning para atualizar quando necessário
-const CACHE_NAME = 'cfm-v1';
+// CFM Service Worker v2.0
+const CACHE_NAME = 'cfm-v3';
 const URLS_TO_CACHE = [
   '/',
-  '/index.html',
   '/manifest.json'
+  // index.html propositalmente fora do cache — sempre busca do servidor
 ];
 
-// Instalação do Service Worker
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(URLS_TO_CACHE).catch(() => {
-        // Se alguma URL falhar, continua anyway
-        return URLS_TO_CACHE
-          .filter(url => url !== '/index.html')
-          .reduce((p, url) => p.then(() => cache.add(url).catch(() => {})), Promise.resolve());
-      });
+      return cache.addAll(URLS_TO_CACHE).catch(() => {});
     })
   );
   self.skipWaiting();
 });
 
-// Ativação do Service Worker (limpa caches antigos)
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
@@ -38,76 +30,53 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Estratégia de Fetch: Network First, Fall back to Cache
 self.addEventListener('fetch', (event) => {
-  // Ignora requisições não-GET
-  if (event.request.method !== 'GET') {
+  if (event.request.method !== 'GET') return;
+
+  const url = event.request.url;
+
+  // index.html: SEMPRE busca do servidor (Network Only)
+  // Isso garante que o iPhone sempre pegue a versão mais recente
+  if (url.includes('/index.html') || url.endsWith('/') || url === self.location.origin + '/') {
+    event.respondWith(
+      fetch(event.request, { cache: 'no-store' })
+        .catch(() => caches.match('/index.html'))
+    );
     return;
   }
 
-  // Para recursos externos (CDN, fonts), usa estratégia de cache com fallback
-  if (event.request.url.includes('cdn.tailwindcss.com') ||
-      event.request.url.includes('cdnjs.cloudflare.com') ||
-      event.request.url.includes('fonts.googleapis.com') ||
-      event.request.url.includes('fontawesome')) {
+  // CDN externos: Cache First (fonts, tailwind, fontawesome, supabase)
+  if (url.includes('cdn.') || url.includes('cdnjs.') || 
+      url.includes('fonts.google') || url.includes('fontawesome') ||
+      url.includes('jsdelivr') || url.includes('supabase')) {
     event.respondWith(
-      caches.match(event.request).then((response) => {
-        return response || fetch(event.request).then((response) => {
+      caches.match(event.request).then((cached) => {
+        return cached || fetch(event.request).then((response) => {
           if (response.status === 200) {
-            const clonedResponse = response.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(event.request, clonedResponse);
-            });
-            return response;
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
           }
           return response;
-        }).catch(() => {
-          // Se falhar e não tem cache, retorna resposta offline
-          return new Response('Offline - recurso não disponível', {
-            status: 503,
-            statusText: 'Service Unavailable'
-          });
         });
       })
     );
     return;
   }
 
-  // Para o index.html e páginas, estratégia Network First
+  // Demais recursos: Network First
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        // Cria um clone para guardar no cache
-        const clonedResponse = response.clone();
-        
-        if (response.status === 200 && event.request.method === 'GET') {
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, clonedResponse);
-          });
+        if (response.status === 200) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
         }
-        
         return response;
       })
-      .catch(() => {
-        // Se offline, retorna do cache
-        return caches.match(event.request).then((response) => {
-          if (response) {
-            return response;
-          }
-          
-          // Se não tiver no cache, retorna página offline
-          return caches.match('/index.html').then((indexResponse) => {
-            return indexResponse || new Response('Offline', {
-              status: 503,
-              statusText: 'Service Unavailable'
-            });
-          });
-        });
-      })
+      .catch(() => caches.match(event.request))
   );
 });
 
-// Notificação de atualização disponível
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
