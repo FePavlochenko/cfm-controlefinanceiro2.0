@@ -1605,17 +1605,11 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
         }
       }
 
-      // Guarda o updated_at que ESTE device acabou de escrever
-      // Isso permite que o Realtime ignore essa mudança (veio do próprio device)
-      const meuUpdatedAt = new Date().toISOString();
-      window._cfmMeuUltimoUpdatedAt = meuUpdatedAt;
+      // Atualiza marca d'água para o polling não reprocessar o que acabamos de enviar
       const { data: latest } = await syncClient
         .from('transactions').select('updated_at')
         .eq('profile_id', id).order('updated_at', { ascending: false }).limit(1);
-      if (latest && latest[0]) {
-        ultimoUpdatedAt = latest[0].updated_at;
-        window._cfmMeuUltimoUpdatedAt = latest[0].updated_at;
-      }
+      if (latest && latest[0]) ultimoUpdatedAt = latest[0].updated_at;
 
     } catch(e) {
       console.error('❌ Erro sync:', e.message);
@@ -1628,35 +1622,6 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
   function iniciarPolling() {
     if (pollingInterval) clearInterval(pollingInterval);
     ultimoUpdatedAt = null;
-
-    // Tenta Realtime WebSocket (funciona no iPhone onde polling HTTP é bloqueado)
-    // Web e Mac continuam usando polling HTTP abaixo — não são afetados
-    const p0 = perfilAtivo();
-    const id0 = PROFILE_IDS[p0];
-    if (id0 && syncClient) {
-      try {
-        if (window._cfmRealtimeChannel) {
-          syncClient.removeChannel(window._cfmRealtimeChannel);
-        }
-        window._cfmRealtimeChannel = syncClient
-          .channel('cfm-sync-' + id0)
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions', filter: 'profile_id=eq.' + id0 },
-            async (payload) => {
-          if (syncing) return;
-          // Ignora se foi este device que salvou (compara updated_at)
-          const payloadAt = payload?.new?.updated_at || payload?.commit_timestamp;
-          if (payloadAt && window._cfmMeuUltimoUpdatedAt && payloadAt <= window._cfmMeuUltimoUpdatedAt) {
-            console.log('📡 Realtime: ignorando mudança do próprio device');
-            return;
-          }
-          console.log('📡 Realtime: mudança de outro device detectada');
-          await baixarDoSupabase(id0, p0);
-        })
-          .subscribe((status) => console.log('📡 Realtime:', status));
-      } catch(e) {
-        console.warn('⚠️ Realtime indisponível:', e.message);
-      }
-    }
 
     async function checar() {
       if (!syncClient || !navigator.onLine || syncing) return;
@@ -1700,30 +1665,22 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
       const local = JSON.parse(localStorage.getItem('cfm-v4-' + perfilChave) || '{}');
 
       if (txs && txs.length > 0) {
-        // Verifica se os dados do Supabase são do próprio device
-        // Se o updated_at mais recente for igual ao que enviamos, não substitui
-        const maisRecente = txs.reduce((max, tx) => tx.updated_at > max ? tx.updated_at : max, '');
-        if (window._cfmMeuUltimoUpdatedAt && maisRecente <= window._cfmMeuUltimoUpdatedAt) {
-          console.log('📡 Supabase tem dados do próprio device, ignorando download de lanc');
-        } else {
-          const lanc = {};
-          txs.forEach(tx => {
-            const partes = (tx.date || '').split('-');
-            const mes    = partes.length >= 2 ? parseInt(partes[1], 10) - 1 : new Date().getMonth();
-            if (!lanc[mes]) lanc[mes] = [];
-            lanc[mes].push({
-              desc:   tx.description || '',
-              valor:  parseFloat(tx.amount) || 0,
-              tipo:   tx.type === 'income' ? 'receita' : 'despesa',
-              conta:  (tx.notes || '').replace('Conta: ', ''),
-              cat:    tx.category    || '',
-              sub:    tx.subcategory || '',
-              cartao: ''
-            });
+        const lanc = {};
+        txs.forEach(tx => {
+          const partes = (tx.date || '').split('-');
+          const mes    = partes.length >= 2 ? parseInt(partes[1], 10) - 1 : new Date().getMonth();
+          if (!lanc[mes]) lanc[mes] = [];
+          lanc[mes].push({
+            desc:   tx.description || '',
+            valor:  parseFloat(tx.amount) || 0,
+            tipo:   tx.type === 'income' ? 'receita' : 'despesa',
+            conta:  (tx.notes || '').replace('Conta: ', ''),
+            cat:    tx.category    || '',
+            sub:    tx.subcategory || '',
+            cartao: ''
           });
-          local.lanc = lanc;
-          console.log('📡 Dados de outro device aplicados:', txs.length, 'transações');
-        }
+        });
+        local.lanc = lanc;
       }
 
       if (contas && contas.length > 0) {
@@ -1741,15 +1698,8 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
       }
 
       localStorage.setItem('cfm-v4-' + perfilChave, JSON.stringify(local));
-      const appVisivel2 = document.getElementById('app') && !document.getElementById('app').classList.contains('hidden');
-      if (appVisivel2 && typeof D !== 'undefined' && typeof migrar === 'function') {
-        const dadosMigrados = migrar(local, perfilChave);
-        Object.assign(D, dadosMigrados);
-        if (typeof render === 'function') {
-          try { render(); console.log('✅ Tela atualizada do Supabase'); }
-          catch(e) { console.warn('⚠️ Render erro:', e.message); }
-        }
-      }
+      if (typeof D !== 'undefined') Object.assign(D, local);
+      if (typeof render === 'function') { render(); console.log('✅ Tela atualizada do Supabase'); }
 
     } catch(e) {
       console.error('❌ Erro ao baixar:', e.message);
