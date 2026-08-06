@@ -1623,6 +1623,25 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
     if (pollingInterval) clearInterval(pollingInterval);
     ultimoUpdatedAt = null;
 
+    // Tenta Realtime WebSocket (funciona no iPhone onde polling HTTP é bloqueado)
+    // Web e Mac continuam usando polling HTTP abaixo — não são afetados
+    const p0 = perfilAtivo();
+    const id0 = PROFILE_IDS[p0];
+    if (id0 && syncClient) {
+      try {
+        if (window._cfmRealtimeChannel) {
+          syncClient.removeChannel(window._cfmRealtimeChannel);
+        }
+        window._cfmRealtimeChannel = syncClient
+          .channel('cfm-sync-' + id0)
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions', filter: 'profile_id=eq.' + id0 },
+            async () => { if (!syncing) { console.log('📡 Realtime: mudança detectada'); await baixarDoSupabase(id0, p0); } })
+          .subscribe((status) => console.log('📡 Realtime:', status));
+      } catch(e) {
+        console.warn('⚠️ Realtime indisponível:', e.message);
+      }
+    }
+
     async function checar() {
       if (!syncClient || !navigator.onLine || syncing) return;
       try {
