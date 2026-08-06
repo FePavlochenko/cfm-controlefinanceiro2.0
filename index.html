@@ -1635,7 +1635,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
         window._cfmRealtimeChannel = syncClient
           .channel('cfm-sync-' + id0)
           .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions', filter: 'profile_id=eq.' + id0 },
-            async () => { if (!syncing) { console.log('📡 Realtime: mudança detectada'); await baixarDoSupabase(id0, p0); } })
+            async () => { if (!syncing && (Date.now()-ultimoSync)>3000) { console.log('📡 Realtime: mudança detectada'); await baixarDoSupabase(id0, p0); } })
           .subscribe((status) => console.log('📡 Realtime:', status));
       } catch(e) {
         console.warn('⚠️ Realtime indisponível:', e.message);
@@ -1717,8 +1717,15 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
       }
 
       localStorage.setItem('cfm-v4-' + perfilChave, JSON.stringify(local));
-      if (typeof D !== 'undefined') Object.assign(D, local);
-      if (typeof render === 'function') { render(); console.log('✅ Tela atualizada do Supabase'); }
+      const appVisivel2 = document.getElementById('app') && !document.getElementById('app').classList.contains('hidden');
+      if (appVisivel2 && typeof D !== 'undefined' && typeof migrar === 'function') {
+        const dadosMigrados = migrar(local, perfilChave);
+        Object.assign(D, dadosMigrados);
+        if (typeof render === 'function') {
+          try { render(); console.log('✅ Tela atualizada do Supabase'); }
+          catch(e) { console.warn('⚠️ Render erro:', e.message); }
+        }
+      }
 
     } catch(e) {
       console.error('❌ Erro ao baixar:', e.message);
