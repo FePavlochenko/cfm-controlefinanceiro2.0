@@ -506,8 +506,10 @@ function mudarMes(d){mesAtual=(mesAtual+d+12)%12;if(D&&D.inicial&&!(mesAtual in 
 
 // ===== RENDER =====
 function render(){
-  // Guard: se D ainda não está carregado (ex: troca de perfil com localStorage vazio), aborta silenciosamente
+  // Guard 1: D ainda não carregado (troca de perfil com localStorage vazio)
   if(!D||!D.inicial||!D.previsto||!D.lanc)return;
+  // Guard 2: DOM do app não está visível — sync disparou antes de selecionarPerfil montar a tela
+  if(!document.getElementById('saldo-atual'))return;
   document.getElementById('label-mes').textContent=MESES[mesAtual];atualizarPills();
   const rec=getLanc().filter(l=>l.tipo==='receita').reduce((s,l)=>s+l.valor,0);
   const desp=getLanc().filter(l=>l.tipo==='despesa').reduce((s,l)=>s+l.valor,0);
@@ -1496,21 +1498,6 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
 <!-- CFM Sync v3 - anti-loop com deviceId -->
 <script>
 (function() {
-  /*
-   * ANTES DE TESTAR — rode no Supabase SQL Editor para limpar o estado antigo:
-   *
-   *   DELETE FROM transactions WHERE profile_id IN (
-   *     'bcc95e03-01a5-4f1a-b7a3-5b575781c428',
-   *     '138deb76-4a0b-40a6-a713-f2cadf2c5160'
-   *   );
-   *   DELETE FROM accounts WHERE profile_id IN (
-   *     'bcc95e03-01a5-4f1a-b7a3-5b575781c428',
-   *     '138deb76-4a0b-40a6-a713-f2cadf2c5160'
-   *   );
-   *
-   * Depois limpe o localStorage de TODOS os devices antes do primeiro sync.
-   */
-
   const SUPABASE_URL = 'https://aiyptgdemugbapbfevcw.supabase.co';
   const SUPABASE_KEY = 'sb_publishable_QBtGEzIz3zlhH_9dtQql5g_sieiz0iO';
   const PROFILE_IDS = {
@@ -1518,9 +1505,9 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
     quitanda: '138deb76-4a0b-40a6-a713-f2cadf2c5160'
   };
 
-  // deviceId único por sessão (sessionStorage: não persiste entre abas/reloads)
-  // Isso permite identificar se a mudança no Realtime veio DESTE device ou de outro.
-  // Não usa localStorage para não vazar entre perfis ou interferir nos dados do app.
+  // deviceId único por sessão — identifica se a mudança no Supabase veio DESTE device.
+  // Usa sessionStorage (não localStorage) para não interferir nos dados do app nem
+  // sobreviver a reloads, e ser independente entre abas.
   let deviceId = sessionStorage.getItem('cfm-device-id');
   if (!deviceId) {
     deviceId = 'dev-' + Math.random().toString(36).slice(2, 10) + '-' + Date.now();
@@ -1531,18 +1518,16 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
   let syncClient      = null;
   let ultimoSync      = 0;
   let syncing         = false;
-  let baixando        = false; // flag para bloquear sync enquanto baixa do Supabase
+  let baixando        = false; // bloqueia sincronizar() enquanto baixamos do Supabase
   let pollingInterval = null;
   let ultimoUpdatedAt = null;
 
-  // Sempre lê o perfil ativo real (variável global `perfil` do app)
   function perfilAtivo() {
     return (typeof perfil !== 'undefined' && perfil)
       ? perfil
       : (localStorage.getItem('cfm-perfil-ativo') || 'pessoal');
   }
 
-  // Converte índice JS (0=Jan) para data válida "YYYY-MM-01"
   function mesParaData(mesIdx) {
     const ano = new Date().getFullYear();
     const mm  = String(parseInt(mesIdx, 10) + 1).padStart(2, '0');
@@ -1554,7 +1539,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
     if (!window.supabase) { console.error('❌ Supabase CDN não carregou'); return; }
     syncClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
     window.cfmSyncClient = syncClient;
-    console.log('✅ CFM Sync v2 iniciado');
+    console.log('✅ CFM Sync v3 iniciado');
     hookPersistir();
     iniciarPolling();
   }
@@ -1571,10 +1556,11 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
     console.log('🔗 Hook persistir() instalado');
   }
 
-  // ── sync: localStorage → Supabase (delete + insert, sem duplicação) ─
+  // ── sync: localStorage → Supabase ───────────────────────────────────
   async function sincronizar() {
     if (!syncClient || !navigator.onLine) return;
-    if (syncing || baixando) return; // não sincroniza enquanto estamos baixando dados remotos
+    if (syncing || baixando) return; // não sobe enquanto estamos baixando
+
     syncing = true;
     ultimoSync = Date.now();
 
@@ -1586,7 +1572,6 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
       const dados = JSON.parse(localStorage.getItem('cfm-v4-' + p) || '{}');
       if (!dados || !dados.lanc) { syncing = false; return; }
 
-      // Apaga tudo do perfil e reinserindo o estado atual (sem duplicação)
       await syncClient.from('transactions').delete().eq('profile_id', id);
 
       const rows = [];
@@ -1598,15 +1583,15 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
           rows.push({
             id:          id + '-' + mesIdx + '-' + i + '-' + (tx.desc||'').replace(/[^a-zA-Z0-9]/g,'').slice(0,16),
             profile_id:  id,
+            device_id:   deviceId, // identifica o device de origem para anti-loop
             type:        tx.tipo === 'receita' ? 'income' : 'expense',
             category:    tx.cat  || 'Sem categoria',
             subcategory: tx.sub  || '',
             description: tx.desc || '',
             amount:      parseFloat(tx.valor) || 0,
-            date:        mesParaData(mesIdx),  // sempre válida: 2026-08-01
+            date:        mesParaData(mesIdx),
             notes:       tx.conta ? 'Conta: ' + tx.conta : '',
-            updated_at:  new Date().toISOString(),
-            device_id:   deviceId  // identifica qual device enviou — usado pelo Realtime para ignorar mudanças próprias
+            updated_at:  new Date().toISOString()
           });
         }
       }
@@ -1623,11 +1608,11 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
         const cRows = dados.contas.map(c => ({
           id:         id + '-conta-' + (c.nome||'').replace(/[^a-zA-Z0-9]/g,'').slice(0,16),
           profile_id: id,
+          device_id:  deviceId,
           name:       c.nome  || 'Conta',
           type:       'bank',
           balance:    parseFloat(c.saldoInicial || c.saldo) || 0,
-          updated_at: new Date().toISOString(),
-          device_id:  deviceId
+          updated_at: new Date().toISOString()
         }));
         if (cRows.length > 0) {
           const { error } = await syncClient.from('accounts').insert(cRows);
@@ -1635,7 +1620,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
         }
       }
 
-      // Atualiza marca d'água para o polling não reprocessar o que acabamos de enviar
+      // Atualiza baseline do polling com o timestamp que acabamos de gravar
       const { data: latest } = await syncClient
         .from('transactions').select('updated_at')
         .eq('profile_id', id).order('updated_at', { ascending: false }).limit(1);
@@ -1660,7 +1645,6 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
         const id = PROFILE_IDS[p];
         if (!id) return;
 
-        // Busca a transação mais recente com seu device_id para comparar
         const { data, error } = await syncClient
           .from('transactions')
           .select('updated_at, device_id')
@@ -1671,18 +1655,19 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
         if (error || !data || data.length === 0) return;
         const { updated_at: novo, device_id: origemDevice } = data[0];
 
-        // Primeira checagem: apenas registra o timestamp atual como baseline
+        // Primeira execução: registra baseline sem baixar
         if (ultimoUpdatedAt === null) { ultimoUpdatedAt = novo; return; }
 
-        // Mudança detectada — mas só baixa se veio de OUTRO device
         if (novo !== ultimoUpdatedAt) {
           ultimoUpdatedAt = novo;
+
+          // Só baixa se veio de OUTRO device — ignora mudanças próprias
           if (origemDevice && origemDevice === deviceId) {
-            // Esta mudança foi enviada por NÓS mesmos — ignora para não criar loop
             console.log('🔄 Mudança própria detectada pelo polling — ignorando');
             return;
           }
-          console.log('📡 Mudança remota de outro device detectada — baixando...');
+
+          console.log('📡 Mudança de outro device detectada — baixando...');
           await baixarDoSupabase(id, p);
         }
       } catch(e) {
@@ -1697,14 +1682,15 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
 
   // ── download: Supabase → localStorage + render ──────────────────────
   async function baixarDoSupabase(profileId, perfilChave) {
-    if (perfilChave !== perfilAtivo()) return; // só baixa se for o perfil ativo
-    if (baixando) return; // evita downloads paralelos
+    if (perfilChave !== perfilAtivo()) return;
+    if (baixando) return;
 
-    baixando = true; // bloqueia sincronizar() enquanto aplicamos dados remotos
+    baixando = true;
     try {
       const { data: txs }    = await syncClient.from('transactions').select('*').eq('profile_id', profileId);
       const { data: contas } = await syncClient.from('accounts').select('*').eq('profile_id', profileId);
 
+      // Lê o localStorage do perfil correto — nunca mistura perfis
       const local = JSON.parse(localStorage.getItem('cfm-v4-' + perfilChave) || '{}');
 
       if (txs && txs.length > 0) {
@@ -1740,43 +1726,38 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
         });
       }
 
-      // Aplica os dados — sem disparar persistir() (que chamaria sincronizar())
-      // Usamos localStorage direto + Object.assign(D) para não passar pelo hook
+      // Grava no localStorage do perfil correto sem passar pelo hook de persistir()
       localStorage.setItem('cfm-v4-' + perfilChave, JSON.stringify(local));
-      if (typeof D !== 'undefined' && D && typeof D === 'object') {
+
+      // Só aplica em D se o perfil ativo ainda é o mesmo (sem race condition)
+      if (typeof D !== 'undefined' && D && perfilChave === perfilAtivo()) {
         Object.assign(D, local);
       }
 
-      // Atualiza o baseline do polling para o timestamp que acabamos de aplicar
-      const { data: latest } = await syncClient
-        .from('transactions').select('updated_at')
-        .eq('profile_id', profileId).order('updated_at', { ascending: false }).limit(1);
-      if (latest && latest[0]) ultimoUpdatedAt = latest[0].updated_at;
-
-      // Renderiza somente se o elemento raiz existe (evita erro quando app não está visível)
+      // Renderiza só se o DOM do app estiver visível
       if (typeof render === 'function' && document.getElementById('saldo-atual')) {
         render();
-        console.log('✅ Tela atualizada do Supabase (outro device)');
+        console.log('✅ Tela atualizada (outro device →', perfilChave, ')');
       }
 
     } catch(e) {
       console.error('❌ Erro ao baixar:', e.message);
     } finally {
-      baixando = false; // libera sincronizar() independente de erro
+      baixando = false;
     }
   }
 
   // ── API pública ──────────────────────────────────────────────────────
-  // Chamado quando o usuário troca de perfil
   window.CFMSyncTrocarPerfil = function(novoPerfil) {
     console.log('🔄 Sync: trocando para', novoPerfil);
     ultimoSync = 0;
+    ultimoUpdatedAt = null; // reseta baseline ao trocar de perfil
     iniciarPolling();
   };
   window.CFMSyncAgora  = () => sincronizar();
   window.CFMSyncStatus = () => ({
-    online: navigator.onLine, perfil: perfilAtivo(),
-    syncing, ultimoSync: new Date(ultimoSync).toLocaleTimeString('pt-BR')
+    online: navigator.onLine, perfil: perfilAtivo(), deviceId,
+    syncing, baixando, ultimoSync: new Date(ultimoSync).toLocaleTimeString('pt-BR')
   });
 
   if (document.readyState === 'loading') {
@@ -1785,7 +1766,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
     setTimeout(iniciarSync, 800);
   }
 
-  console.log('✅ CFM Sync v2 carregado');
+  console.log('✅ CFM Sync v3 carregado');
 })();
 </script>
 
