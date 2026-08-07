@@ -471,7 +471,7 @@ function migrar(d,p){
   d.catsReceita.forEach(c=>{if(!c.sub)c.sub=[];if(c.foto===undefined)c.foto='';});
   d.contas.forEach(c=>{if(c.logo===undefined)c.logo='';});
   if(!d.cartoes)d.cartoes=[];
-  d.cartoes.forEach(c=>{if(c.logo===undefined)c.logo='';});
+  d.cartoes.forEach(c=>{if(c.logo===undefined)c.logo='';if(c.fechamento===undefined)c.fechamento='';if(c.lancamentos===undefined)c.lancamentos=[];});
   if(!d.reserva)d.reserva=pad.reserva;
   if(!d.reserva.historico)d.reserva.historico=[];
   if(d.reserva.nomeReserva===undefined)d.reserva.nomeReserva='Minha reserva';
@@ -546,9 +546,24 @@ function render(){
   document.getElementById('vg-qtd').textContent=getLanc().length;
   renderRanking(desp);renderLancamentos();renderContas();renderCartoes();renderRelatorios(rec,desp);
   renderOrcamentos();renderReserva();renderDividas();renderSistemas();renderConfig();
-  document.getElementById('inp-conta').innerHTML=D.contas.map(c=>`<option>${c.nome}</option>`).join('');
+  document.getElementById('inp-conta').innerHTML=
+    D.contas.map(c=>`<option value="conta:${c.nome}">${c.nome}</option>`).join('')+
+    (D.cartoes.length?'<optgroup label="Cartões">'+D.cartoes.map(c=>`<option value="cartao:${c.nome}">💳 ${c.nome}</option>`).join('')+'</optgroup>':'');
   atualizarCatsModal();
   const inpNome=document.getElementById('inp-nome-perfil');if(inpNome&&document.activeElement!==inpNome)inpNome.value=D.nome||'';
+  verificarAlertasFechamento();
+}
+function verificarAlertasFechamento(){
+  if(!D.cartoes)return;
+  const hoje=new Date(),diaHoje=hoje.getDate();
+  D.cartoes.forEach(c=>{
+    if(!c.fechamento)return;
+    const diff=parseInt(c.fechamento)-diaHoje;
+    if(diff===3&&!sessionStorage.getItem('alerta-fech-'+c.nome+'-'+hoje.toDateString())){
+      sessionStorage.setItem('alerta-fech-'+c.nome+'-'+hoje.toDateString(),'1');
+      setTimeout(()=>toast('⚠️ Fatura do '+c.nome+' fecha em 3 dias (dia '+c.fechamento+')'),800);
+    }
+  });
 }
 function renderRanking(total){
   const ord=agrupar('despesa');
@@ -783,17 +798,61 @@ function renderConfContas(){
 function renderCartoes(){
   const area=document.getElementById('area-cartoes');if(!area)return;
   document.getElementById('cartoes-vazio').classList.toggle('hidden',D.cartoes.length>0);
-  const gastoPorCartao={};getLanc().filter(l=>l.tipo==='despesa'&&l.cartao).forEach(l=>gastoPorCartao[l.cartao]=(gastoPorCartao[l.cartao]||0)+l.valor);
+  // gasto via lançamentos do mês vinculados ao cartão (modo antigo)
+  const gastoPorCartaoLanc={};getLanc().filter(l=>l.tipo==='despesa'&&l.cartao).forEach(l=>gastoPorCartaoLanc[l.cartao]=(gastoPorCartaoLanc[l.cartao]||0)+l.valor);
   area.innerHTML=D.cartoes.map((c,i)=>{
-    const gasto=gastoPorCartao[c.nome]||0,pct=c.limite?Math.min(gasto/c.limite*100,100):0;
+    if(!c.lancamentos)c.lancamentos=[];
+    // total fatura = lançamentos próprios do cartão (array interno)
+    const totalFatura=c.lancamentos.reduce((s,l)=>s+l.valor,0);
+    // também soma lançamentos do mês vinculados via campo cartao (retrocompatibilidade)
+    const totalLanc=gastoPorCartaoLanc[c.nome]||0;
+    const gasto=totalFatura+totalLanc;
+    const pct=c.limite?Math.min(gasto/c.limite*100,100):0;
+    const corBarra=pct>=100?'bg-goiaba':pct>=70?'bg-amber-500':'bg-folha';
+    // alerta fechamento
+    let alertaFech='';
+    if(c.fechamento){
+      const hoje=new Date(),diaHoje=hoje.getDate(),diaFech=parseInt(c.fechamento);
+      const diff=diaFech-diaHoje;
+      if(diff>=0&&diff<=3)alertaFech=`<div class="flex items-center gap-1.5 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5 mb-2 text-xs text-amber-700"><i class="fas fa-bell text-amber-500"></i><span>Fatura fecha em <b>${diff===0?'hoje':diff===1?'amanhã':diff+' dias'}</b> (dia ${diaFech})</span></div>`;
+    }
+    // lista transações do cartão
+    const listaHTML=c.lancamentos.length?c.lancamentos.slice().reverse().slice(0,5).map((l,li)=>{
+      const ri=c.lancamentos.length-1-li;
+      return `<div class="flex items-center justify-between text-xs py-1 border-b border-gray-50 last:border-0">
+        <div class="flex-1 min-w-0"><p class="truncate text-gray-700 font-medium">${l.desc}</p>
+        <p class="text-gray-400">${l.data?fmtData(l.data)+' · ':''}<span class="text-gray-500">${l.cat||''}</span></p></div>
+        <div class="flex items-center gap-1.5 ml-2 shrink-0">
+          <span class="valor font-semibold text-goiaba">− ${fmt(l.valor)}</span>
+          <button onclick="excluirLancCartao(${i},${ri})" class="text-gray-200 hover:text-goiaba"><i class="fas fa-trash text-[10px]"></i></button>
+        </div>
+      </div>`;}).join(''):'';
+    const maisHTML=c.lancamentos.length>5?`<p class="text-[10px] text-gray-400 text-center pt-1">+${c.lancamentos.length-5} mais</p>`:'';
     return `<div class="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm">
-      <div class="flex justify-between items-start mb-3"><div class="flex items-center space-x-3">
-        <button onclick="menuIconeCartao(${i})" class="relative">${iconeBadge(c,'w-10 h-10','text-sm')}<span class="absolute -bottom-1 -right-1 w-4 h-4 bg-mata text-papel rounded-full text-[8px] flex items-center justify-center"><i class="fas fa-pen"></i></span></button>
-        <div><input class="edit-inline text-sm font-semibold w-32" value="${c.nome}" onchange="D.cartoes[${i}].nome=this.value;persistir();render()"><p class="text-[11px] text-gray-400">Limite: <span class="valor cursor-pointer hover:text-folha" onclick="editarLimiteCartao(${i},this)">${fmt(c.limite||0)}</span></p></div></div>
-        <button onclick="excluirCartao(${i})" class="text-gray-300 hover:text-goiaba text-xs"><i class="fas fa-trash"></i></button></div>
-      <div class="flex justify-between text-xs mb-1"><span class="text-gray-500">Fatura do mês</span><span class="valor font-bold ${pct>=100?'text-goiaba':'text-gray-700'}">${fmt(gasto)}${c.limite?' / '+fmt(c.limite):''}</span></div>
-      ${c.limite?`<div class="w-full bg-gray-100 h-2.5 rounded-full overflow-hidden"><div class="${pct>=100?'bg-goiaba':pct>=70?'bg-amber-500':'bg-folha'} h-full rounded-full barra-anim" style="width:${pct}%"></div></div>`:''}
-      <div id="editor-cartao-${i}"></div></div>`;}).join('');
+      <div class="flex justify-between items-start mb-3">
+        <div class="flex items-center space-x-3">
+          <button onclick="menuIconeCartao(${i})" class="relative">${iconeBadge(c,'w-10 h-10','text-sm')}<span class="absolute -bottom-1 -right-1 w-4 h-4 bg-mata text-papel rounded-full text-[8px] flex items-center justify-center"><i class="fas fa-pen"></i></span></button>
+          <div>
+            <input class="edit-inline text-sm font-semibold w-36" value="${c.nome}" onchange="D.cartoes[${i}].nome=this.value;persistir();render()">
+            <p class="text-[11px] text-gray-400">Limite: <span class="valor cursor-pointer hover:text-folha" onclick="editarLimiteCartao(${i},this)">${fmt(c.limite||0)}</span></p>
+            <p class="text-[11px] text-gray-400">Fecha dia: <span class="cursor-pointer hover:text-folha" onclick="editarFechamentoCartao(${i},this)">${c.fechamento||'—'}</span></p>
+          </div>
+        </div>
+        <button onclick="excluirCartao(${i})" class="text-gray-300 hover:text-goiaba text-xs mt-1"><i class="fas fa-trash"></i></button>
+      </div>
+      ${alertaFech}
+      <div class="flex justify-between text-xs mb-1">
+        <span class="text-gray-500 font-medium">Fatura do mês</span>
+        <span class="valor font-bold ${pct>=100?'text-goiaba':'text-gray-700'}">${fmt(gasto)}${c.limite?' / '+fmt(c.limite):''}</span>
+      </div>
+      ${c.limite?`<div class="w-full bg-gray-100 h-2.5 rounded-full overflow-hidden mb-3"><div class="${corBarra} h-full rounded-full barra-anim" style="width:${pct}%"></div></div>`:'<div class="mb-3"></div>'}
+      <div class="flex gap-2 mb-3">
+        <button onclick="abrirLancCartao(${i})" class="flex-1 flex items-center justify-center gap-1.5 bg-mata text-papel text-xs font-bold py-2 rounded-xl hover:bg-folha transition"><i class="fas fa-plus"></i>Lançar no cartão</button>
+        <button onclick="abrirPagarFatura(${i})" class="flex-1 flex items-center justify-center gap-1.5 border border-folha text-folha text-xs font-bold py-2 rounded-xl hover:bg-folha hover:text-white transition"><i class="fas fa-check-circle"></i>Pagar fatura</button>
+      </div>
+      ${c.lancamentos.length?`<div class="border-t border-gray-100 pt-2">${listaHTML}${maisHTML}</div>`:''}
+      <div id="editor-cartao-${i}"></div>
+    </div>`;}).join('');
 }
 function menuIconeCartao(i){
   const cont=document.getElementById('editor-cartao-'+i);if(!cont)return;
@@ -816,7 +875,8 @@ function novoCartaoInline(){
   const div=document.createElement('div');div.className='bg-papel border-2 border-folha rounded-2xl p-4 anima-pop';
   div.innerHTML=`<p class="text-xs font-bold mb-3">Novo cartão</p>
     <input id="ncart-nome" placeholder="Nome do cartão (ex.: Nubank Ultravioleta)" class="w-full bg-white border border-gray-200 rounded-lg py-2 px-3 text-sm mb-2">
-    <div class="grid grid-cols-2 gap-2 mb-3"><input id="ncart-sigla" placeholder="Sigla" maxlength="3" class="bg-white border border-gray-200 rounded-lg py-2 px-3 text-sm"><input id="ncart-limite" type="number" step="0.01" placeholder="Limite R$" class="valor bg-white border border-gray-200 rounded-lg py-2 px-3 text-sm"></div>
+    <div class="grid grid-cols-2 gap-2 mb-2"><input id="ncart-sigla" placeholder="Sigla" maxlength="3" class="bg-white border border-gray-200 rounded-lg py-2 px-3 text-sm"><input id="ncart-limite" type="number" step="0.01" placeholder="Limite R$" class="valor bg-white border border-gray-200 rounded-lg py-2 px-3 text-sm"></div>
+    <div class="flex items-center gap-2 mb-3"><label class="text-[11px] text-gray-500 shrink-0">Dia fechamento:</label><input id="ncart-fechamento" type="number" min="1" max="31" placeholder="ex: 5" class="w-24 bg-white border border-gray-200 rounded-lg py-2 px-3 text-sm"></div>
     <button onclick="escolherFoto(u=>{window._ncartLogo=u;toast('Logo carregado')})" class="w-full bg-white border border-gray-300 text-gray-700 text-xs font-semibold py-2 rounded-lg mb-3"><i class="fas fa-image mr-1"></i>Carregar logo (opcional)</button>
     <div class="flex gap-2"><button onclick="window._ncartLogo='';render()" class="flex-1 border border-gray-300 text-gray-600 text-sm font-semibold py-2 rounded-lg">Cancelar</button>
     <button onclick="salvarNovoCartao()" class="flex-1 bg-mata text-papel text-sm font-bold py-2 rounded-lg">Adicionar</button></div>`;
@@ -826,10 +886,108 @@ function salvarNovoCartao(){
   const nome=document.getElementById('ncart-nome').value.trim();if(!nome){toast('Informe o nome.');return;}
   const sigla=(document.getElementById('ncart-sigla').value.trim()||nome.slice(0,2)).toUpperCase();
   const limite=parseFloat(document.getElementById('ncart-limite').value)||0;
-  D.cartoes.push({nome,sigla,cor:'bg-gray-800',logo:window._ncartLogo||'',limite});window._ncartLogo='';
+  const fechamento=parseInt(document.getElementById('ncart-fechamento').value)||0;
+  D.cartoes.push({nome,sigla,cor:'bg-gray-800',logo:window._ncartLogo||'',limite,fechamento,lancamentos:[]});window._ncartLogo='';
   persistir();render();toast('Cartão adicionado');
 }
 function excluirCartao(i){askConfirm('Excluir cartão "'+D.cartoes[i].nome+'"?',()=>{D.cartoes.splice(i,1);persistir();render();});}
+function editarFechamentoCartao(i,el){
+  const inp=document.createElement('input');inp.type='number';inp.min=1;inp.max=31;inp.value=D.cartoes[i].fechamento||'';inp.className='w-10 border-b border-folha outline-none text-[11px]';
+  el.replaceWith(inp);inp.focus();inp.select();
+  const salvar=()=>{const v=parseInt(inp.value);if(v>=1&&v<=31)D.cartoes[i].fechamento=v;else D.cartoes[i].fechamento='';persistir();render();};
+  inp.addEventListener('blur',salvar);inp.addEventListener('keydown',e=>{if(e.key==='Enter')salvar();});
+}
+function excluirLancCartao(ci,li){
+  askConfirm('Excluir este lançamento do cartão?',()=>{D.cartoes[ci].lancamentos.splice(li,1);persistir();render();});
+}
+function abrirLancCartao(ci){
+  const cont=document.getElementById('editor-cartao-'+ci);if(!cont)return;
+  if(cont.dataset.openLanc){cont.innerHTML='';cont.dataset.openLanc='';return;}
+  cont.dataset.openLanc='1';
+  const todasCats=[...D.catsDespesa];
+  const hoje=new Date(),ano=hoje.getFullYear(),mes=String(hoje.getMonth()+1).padStart(2,'0'),dia=String(hoje.getDate()).padStart(2,'0');
+  cont.innerHTML=`<div class="bg-papel border-2 border-folha rounded-xl p-3 mt-3 anima-pop">
+    <p class="text-xs font-bold mb-2">Lançar no cartão</p>
+    <input id="lc-desc-${ci}" placeholder="Descrição" class="w-full bg-white border border-gray-200 rounded-lg py-1.5 px-2 text-sm mb-2">
+    <div class="grid grid-cols-2 gap-2 mb-2">
+      <input id="lc-valor-${ci}" type="number" step="0.01" placeholder="Valor R$" class="valor bg-white border border-gray-200 rounded-lg py-1.5 px-2 text-sm">
+      <input id="lc-data-${ci}" type="date" value="${ano}-${mes}-${dia}" class="bg-white border border-gray-200 rounded-lg py-1.5 px-2 text-sm">
+    </div>
+    <select id="lc-cat-${ci}" onchange="atualizarLcSub(${ci})" class="w-full bg-white border border-gray-200 rounded-lg py-1.5 px-2 text-sm mb-2">
+      <option value="">— categoria (opcional) —</option>
+      ${todasCats.map(c=>`<option>${c.nome}</option>`).join('')}
+    </select>
+    <select id="lc-sub-${ci}" class="w-full bg-white border border-gray-200 rounded-lg py-1.5 px-2 text-sm mb-2 hidden">
+      <option value="">— subcategoria —</option>
+    </select>
+    <div class="flex gap-2">
+      <button onclick="cont=document.getElementById('editor-cartao-${ci}');cont.innerHTML='';cont.dataset.openLanc=''" class="flex-1 border border-gray-300 text-gray-600 text-xs font-semibold py-1.5 rounded-lg">Cancelar</button>
+      <button onclick="salvarLancCartao(${ci})" class="flex-1 bg-mata text-papel text-xs font-bold py-1.5 rounded-lg">Salvar</button>
+    </div>
+  </div>`;
+  document.getElementById('lc-desc-'+ci).focus();
+}
+function atualizarLcSub(ci){
+  const catEl=document.getElementById('lc-cat-'+ci);
+  const subEl=document.getElementById('lc-sub-'+ci);
+  if(!catEl||!subEl)return;
+  const cat=D.catsDespesa.find(c=>c.nome===catEl.value);
+  if(cat&&cat.sub&&cat.sub.length){
+    subEl.innerHTML='<option value="">— subcategoria —</option>'+cat.sub.map(s=>`<option>${s}</option>`).join('');
+    subEl.classList.remove('hidden');
+  }else{subEl.innerHTML='';subEl.classList.add('hidden');}
+}
+function salvarLancCartao(ci){
+  const desc=(document.getElementById('lc-desc-'+ci).value||'').trim();
+  const valor=parseFloat(document.getElementById('lc-valor-'+ci).value);
+  if(!desc||!valor||valor<=0){toast('Preencha descrição e valor.');return;}
+  const data=document.getElementById('lc-data-'+ci).value||new Date().toISOString().slice(0,10);
+  const cat=(document.getElementById('lc-cat-'+ci).value)||'';
+  const sub=(document.getElementById('lc-sub-'+ci)?.value)||'';
+  if(!D.cartoes[ci].lancamentos)D.cartoes[ci].lancamentos=[];
+  D.cartoes[ci].lancamentos.push({desc,valor,data,cat,sub});
+  persistir();render();toast('Lançado no cartão '+D.cartoes[ci].nome);
+}
+function abrirPagarFatura(ci){
+  const cont=document.getElementById('editor-cartao-'+ci);if(!cont)return;
+  if(cont.dataset.openPagar){cont.innerHTML='';cont.dataset.openPagar='';return;}
+  cont.dataset.openPagar='1';
+  if(!D.cartoes[ci].lancamentos)D.cartoes[ci].lancamentos=[];
+  const totalFatura=D.cartoes[ci].lancamentos.reduce((s,l)=>s+l.valor,0);
+  // também lançamentos do mês via campo cartao (retrocompat)
+  const totalLanc=getLanc().filter(l=>l.tipo==='despesa'&&l.cartao===D.cartoes[ci].nome).reduce((s,l)=>s+l.valor,0);
+  const total=totalFatura+totalLanc;
+  cont.innerHTML=`<div class="bg-papel border-2 border-folha rounded-xl p-3 mt-3 anima-pop">
+    <p class="text-xs font-bold mb-1">Pagar fatura — ${D.cartoes[ci].nome}</p>
+    <p class="valor text-base font-bold text-goiaba mb-3">Total: ${fmt(total)}</p>
+    <p class="text-[11px] text-gray-500 mb-1">Debitar da conta:</p>
+    <select id="pf-conta-${ci}" class="w-full bg-white border border-gray-200 rounded-lg py-1.5 px-2 text-sm mb-2">
+      ${D.contas.map(c=>`<option>${c.nome}</option>`).join('')}
+    </select>
+    <p class="text-[11px] text-gray-500 mb-1">Valor a pagar:</p>
+    <input id="pf-valor-${ci}" type="number" step="0.01" value="${total.toFixed(2)}" class="valor w-full bg-white border border-gray-200 rounded-lg py-1.5 px-2 text-sm mb-3">
+    <div class="flex gap-2">
+      <button onclick="cont=document.getElementById('editor-cartao-${ci}');cont.innerHTML='';cont.dataset.openPagar=''" class="flex-1 border border-gray-300 text-gray-600 text-xs font-semibold py-1.5 rounded-lg">Cancelar</button>
+      <button onclick="confirmarPagarFatura(${ci})" class="flex-1 bg-folha text-white text-xs font-bold py-1.5 rounded-lg">Confirmar pagamento</button>
+    </div>
+  </div>`;
+}
+function confirmarPagarFatura(ci){
+  const conta=document.getElementById('pf-conta-'+ci).value;
+  const valor=parseFloat(document.getElementById('pf-valor-'+ci).value);
+  if(!conta||!valor||valor<=0){toast('Informe conta e valor.');return;}
+  if(!D.lanc[mesAtual])D.lanc[mesAtual]=[];
+  D.lanc[mesAtual].unshift({
+    desc:'Pagamento fatura '+D.cartoes[ci].nome,
+    valor,tipo:'despesa',conta,
+    cat:'💳 Cartão',sub:'',cartao:'',
+    data:new Date().toISOString().slice(0,10)
+  });
+  // limpa lançamentos internos do cartão após pagamento
+  D.cartoes[ci].lancamentos=[];
+  persistir();render();
+  toast('Fatura de '+fmt(valor)+' debitada de '+conta);
+}
 
 // ===== ORÇAMENTOS =====
 function renderOrcamentos(){
@@ -1265,10 +1423,22 @@ function atualizarSubcats(){const catNome=document.getElementById('inp-cat').val
 function salvarLancamento(){
   const desc=document.getElementById('inp-desc').value.trim(),valor=parseFloat(document.getElementById('inp-valor').value);
   if(!desc||!valor||valor<=0){toast('Preencha descrição e valor.');return;}
-  const conta=document.getElementById('inp-conta').value,cat=document.getElementById('inp-cat').value,sub=document.getElementById('inp-subcat').value;
+  const contaVal=document.getElementById('inp-conta').value;
+  const cat=document.getElementById('inp-cat').value,sub=document.getElementById('inp-subcat').value;
   const data=document.getElementById('inp-data').value||new Date().toISOString().slice(0,10);
   if(!D.lanc[mesAtual])D.lanc[mesAtual]=[];
-  D.lanc[mesAtual].unshift({desc,valor,tipo:tipoLancamento,conta,cat,sub,cartao:'',data});
+  if(contaVal.startsWith('cartao:')){
+    // lança direto no array de lançamentos do cartão
+    const nomeCartao=contaVal.slice(7);
+    const ci=D.cartoes.findIndex(c=>c.nome===nomeCartao);
+    if(ci>=0){
+      if(!D.cartoes[ci].lancamentos)D.cartoes[ci].lancamentos=[];
+      D.cartoes[ci].lancamentos.push({desc,valor,data,cat,sub});
+    }
+  } else {
+    const conta=contaVal.startsWith('conta:')?contaVal.slice(6):contaVal;
+    D.lanc[mesAtual].unshift({desc,valor,tipo:tipoLancamento,conta,cat,sub,cartao:'',data});
+  }
   document.getElementById('inp-desc').value='';document.getElementById('inp-valor').value='';
   persistir();fecharModal();render();toast('Lançamento salvo');
 }
