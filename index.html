@@ -36,9 +36,14 @@ tailwind.config={theme:{extend:{
   .toggle.on{background:#2E7D4F}
   .toggle::after{content:'';position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#fff;transition:.2s}
   .toggle.on::after{left:20px}
-  .emoji-pop{position:absolute;z-index:60;background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:8px;box-shadow:0 8px 24px rgba(0,0,0,.12);display:grid;grid-template-columns:repeat(8,1fr);gap:2px;max-width:280px}
-  .emoji-pop button{font-size:18px;padding:4px;border-radius:6px;cursor:pointer;background:none;border:none}
-  .emoji-pop button:hover{background:#f3f4f6}
+  .emoji-pop{position:absolute;z-index:60;background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:0;box-shadow:0 8px 32px rgba(0,0,0,.16);width:300px;overflow:hidden}
+  .emoji-pop-tabs{display:flex;overflow-x:auto;border-bottom:1px solid #f3f4f6;padding:4px 6px 0;gap:2px;scrollbar-width:none}
+  .emoji-pop-tabs::-webkit-scrollbar{display:none}
+  .emoji-pop-tab{font-size:15px;padding:4px 6px;border-radius:6px 6px 0 0;cursor:pointer;background:none;border:none;opacity:.5;flex-shrink:0;transition:.15s}
+  .emoji-pop-tab.active,.emoji-pop-tab:hover{opacity:1;background:#f3f4f6}
+  .emoji-pop-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:1px;padding:6px;max-height:200px;overflow-y:auto}
+  .emoji-pop-grid button{font-size:20px;padding:5px;border-radius:6px;cursor:pointer;background:none;border:none;line-height:1;transition:.1s}
+  .emoji-pop-grid button:hover{background:#f3f4f6;transform:scale(1.2)}
   @keyframes pop{0%{transform:scale(.8);opacity:0}100%{transform:scale(1);opacity:1}}
   .anima-pop{animation:pop .25s ease}
   @keyframes brilho{0%,100%{box-shadow:0 0 0 0 rgba(242,169,59,.4)}50%{box-shadow:0 0 0 8px rgba(242,169,59,0)}}
@@ -121,9 +126,9 @@ tailwind.config={theme:{extend:{
         <button onclick="voltarPerfil()" class="md:hidden w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center text-xs"><i class="fas fa-right-left"></i></button>
       </div>
       <div class="flex justify-between items-stretch bg-white/10 rounded-2xl px-2 py-3 text-center max-w-5xl mx-auto">
-        <div class="flex-1 px-1"><p class="text-[10px] opacity-70 mb-0.5">Inicial</p><p id="saldo-inicial" class="valor text-xs md:text-sm font-semibold cursor-pointer hover:text-manga" onclick="editarSaldoInline('inicial',this)">R$ 0,00</p></div>
+        <div class="flex-1 px-1"><p class="text-[10px] opacity-70 mb-0.5">Inicial</p><p id="saldo-inicial" class="valor text-xs md:text-sm font-semibold">R$ 0,00</p></div>
         <div class="border-l border-white/20"></div>
-        <div class="flex-1 px-1"><p class="text-[10px] opacity-70 mb-0.5">Saldo atual</p><p id="saldo-atual" class="valor text-base md:text-2xl font-bold text-manga cursor-pointer hover:opacity-80" onclick="editarSaldoInline('atual',this)">R$ 0,00</p></div>
+        <div class="flex-1 px-1"><p class="text-[10px] opacity-70 mb-0.5">Saldo atual</p><p id="saldo-atual" class="valor text-base md:text-2xl font-bold text-manga">R$ 0,00</p></div>
         <div class="border-l border-white/20"></div>
         <div class="flex-1 px-1"><p class="text-[10px] opacity-70 mb-0.5">Previsto</p><p id="saldo-previsto" class="valor text-xs md:text-sm font-semibold opacity-80 cursor-pointer hover:text-manga" onclick="editarSaldoInline('previsto',this)">R$ 0,00</p></div>
       </div>
@@ -278,7 +283,10 @@ tailwind.config={theme:{extend:{
       <button id="btn-despesa" onclick="setTipo('despesa')" class="flex-1 py-2 rounded-full bg-goiaba text-white">Despesa</button>
       <button id="btn-receita" onclick="setTipo('receita')" class="flex-1 py-2 rounded-full text-gray-500">Receita</button></div>
     <input id="inp-desc" type="text" placeholder="Descrição" class="w-full bg-white border border-gray-200 rounded-xl py-2.5 px-4 mb-3 focus:outline-none focus:ring-2 focus:ring-folha">
-    <input id="inp-valor" type="number" step="0.01" min="0" placeholder="Valor (R$)" class="valor w-full bg-white border border-gray-200 rounded-xl py-2.5 px-4 mb-3 focus:outline-none focus:ring-2 focus:ring-folha">
+    <div class="grid grid-cols-2 gap-3 mb-3">
+      <input id="inp-valor" type="number" step="0.01" min="0" placeholder="Valor (R$)" class="valor w-full bg-white border border-gray-200 rounded-xl py-2.5 px-4 focus:outline-none focus:ring-2 focus:ring-folha">
+      <input id="inp-data" type="date" class="w-full bg-white border border-gray-200 rounded-xl py-2.5 px-4 focus:outline-none focus:ring-2 focus:ring-folha">
+    </div>
     <div class="grid grid-cols-2 gap-3 mb-3">
       <select id="inp-conta" class="bg-white border border-gray-200 rounded-xl py-2.5 px-3 focus:outline-none focus:ring-2 focus:ring-folha"></select>
       <select id="inp-cat" onchange="atualizarSubcats()" class="bg-white border border-gray-200 rounded-xl py-2.5 px-3 focus:outline-none focus:ring-2 focus:ring-folha"></select></div>
@@ -296,7 +304,23 @@ tailwind.config={theme:{extend:{
 const MESES=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 const CORES=['bg-manga','bg-folha','bg-goiaba','bg-mata','bg-amber-600','bg-teal-600','bg-blue-500','bg-pink-500'];
 const CORES_HEX=['#F2A93B','#2E7D4F','#C24C3B','#123B2A','#D97706','#0D9488','#3B82F6','#EC4899','#7C3AED','#DB2777'];
-const EMOJIS=['🍔','🍎','🛒','🏠','🚌','💡','💰','🎉','☕','🍞','💊','⛽','📱','👕','✈️','🎁','🙏','📚','🏋️','💻','🎬','🐶','🌱','🔧','🚚','🥬','🍌','🥚','🧀','🍫','🥤','🏪','💵','📊','🎯','⚠️','🔴','🟡','🟢','❤️','🧺','🍟','🎡','⚫','🏦','✉️','💳','🏡'];
+const EMOJI_CATS={
+  '🍽️ Comida':['🍔','🍕','🌮','🌯','🥗','🍜','🍱','🍣','🍤','🥩','🍗','🥓','🥚','🍳','🧇','🥞','🧆','🧈','🍞','🥐','🥖','🥨','🧀','🥦','🥬','🥕','🌽','🥑','🍅','🍆','🧅','🧄','🥜','🍿','🧂','🥫','🍎','🍊','🍋','🍇','🍓','🍑','🍒','🫐','🥭','🍍','🍌','🍉','🫒','🍫','🍬','🍭','🍦','🍨','🎂','🧁','🍰','🍩','🍪','☕','🧃','🥤','🍺','🍷','🥂','🍸','🧋','🧉','🍵','🫖'],
+  '🏠 Casa':['🏠','🏡','🏢','🏣','🏤','🏥','🏦','🏨','🏩','🏪','🏫','🏬','🏭','🏯','🏰','🗼','🗽','⛺','🛖','🏗️','🧱','🪟','🚪','🛋️','🪑','🚽','🪠','🚿','🛁','🧴','🧻','🪣','🧹','🧺','🧼','🪥','🧽','🛏️','🪞','🖼️','🛁','🪜','🧯','🛒','💡','🔦','🕯️','🪔'],
+  '🚗 Transporte':['🚗','🚕','🚙','🛻','🚌','🚎','🏎️','🚓','🚑','🚒','🚐','🛻','🚚','🚛','🚜','🏍️','🛵','🛺','🚲','🛴','🛹','🛼','🚏','🛣️','🛤️','⛽','🚧','🛑','🚦','🚥','🚢','⛴️','🚤','🛥️','🛳️','✈️','🛩️','🚁','🛸','🚀','⛵','🪂','🏍️','🚂','🚃','🚄','🚅','🚆','🚇','🚈','🚉','🚊','🚝','🚞','🚋','🚌','🚍','🚎','🛞'],
+  '💼 Trabalho':['💼','📁','📂','📋','📊','📈','📉','📌','📍','📎','🖇️','📏','📐','✂️','🗃️','🗄️','🗑️','🔒','🔓','🔏','🔐','🔑','🗝️','🔨','🪓','⛏️','⚙️','🗜️','🔧','🔩','🪛','🔗','📡','💻','🖥️','🖨️','⌨️','🖱️','💾','💿','📀','📱','☎️','📞','📟','📠','📺','📷','📸','📹','🎥','📽️','🎞️','📞','✉️','📧','📩','📨','📦','📫','📪','📬','📭','📮','🗳️'],
+  '💰 Dinheiro':['💰','💵','💴','💶','💷','💸','💳','💎','🏧','💹','📈','📉','🏦','🤑','🪙','💱','💲','🏷️','🧾','📜'],
+  '🎮 Lazer':['🎮','🕹️','🎲','🎯','🎳','🎰','🎭','🎨','🖌️','🎬','🎤','🎧','🎼','🎵','🎶','🎻','🥁','🎹','🎸','🎺','🪗','🎷','🎪','🎠','🎡','🎢','🏖️','🏕️','🌄','🌅','🌃','🌆','🌇','🌉','🗺️','🧩','🪀','🪁','🎑','🪃','🏹','🎣','🤿','🎽','🎿','🛷','🥌','🎟️','🎫'],
+  '⚽ Esporte':['⚽','🏀','🏈','⚾','🥎','🎾','🏐','🏉','🥏','🎱','🪃','🏓','🏸','🏒','🥍','🏑','🏏','⛳','🎣','🤿','🎽','🎿','🛷','🥌','⛸️','🛹','🥊','🥋','🎯','🏋️','🤸','⛹️','🤺','🤾','🏌️','🏇','🧘','🤼','🤽','🚴','🏊','🧗','🤺'],
+  '🏥 Saúde':['💊','💉','🩺','🩹','🏥','⚕️','🩻','🧬','🔬','🩸','🧪','🩼','🦯','👁️','👂','🫁','🫀','🦷','🦴','🧠','🤒','🤕','😷','🩺','🌡️','💪','🧘','🛌'],
+  '👗 Roupas':['👕','👔','👗','👘','🥻','🩱','🩲','🩳','👙','👚','👛','👜','👝','🎒','🧳','👒','🎩','🧢','⛑️','🪖','👓','🕶️','🥽','🌂','☂️','👞','👟','🥾','🥿','👠','👡','👢','🥾','🧤','🧣','🧥','🥼','👑','💍','💎','💄'],
+  '👨‍👩‍👧 Família':['👶','🧒','👦','👧','🧑','👱','👨','🧔','👩','🧓','👴','👵','👪','👨‍👩‍👦','👨‍👩‍👧','👨‍👩‍👧‍👦','❤️','🫂','🤝','👏','🙌','🤲','🙏','💪','🫶'],
+  '📚 Educação':['📚','📖','📝','✏️','🖊️','🖋️','🔏','📏','📐','🗒️','🗓️','📅','📆','📇','📌','📍','🎓','🏫','🔭','🔬','🧫','🧪','🧲','💡','🔋','🪫','💻','📱','🖥️','⌨️','🖱️'],
+  '🌿 Natureza':['🌱','🌿','🍀','🌾','🌵','🌴','🌳','🌲','🎋','🎄','🍁','🍂','🍃','🌺','🌸','🌼','🌻','🌹','💐','🌷','☀️','🌤️','⛅','🌧️','⛈️','🌩️','❄️','🌊','🌈','🌙','⭐','🌟','💫','⚡','🔥','💧','🌍','🌎','🌏'],
+  '🐾 Animais':['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🐔','🐧','🐦','🦆','🦅','🦉','🦇','🐺','🐗','🐴','🦄','🐝','🐛','🦋','🐌','🐞','🐜','🪲','🐢','🐍','🦎','🦖','🦕','🐙','🦑','🦞','🦀','🐡','🐟','🐬','🐳','🦈','🐊','🐅','🐆','🦓','🦍','🐘','🦛','🦏','🐪','🦒','🦘','🦬','🐃','🐂','🐄','🐎','🐖','🐏','🐑','🦙','🐐','🦌','🐕','🐩','🦮','🐈','🪶','🐓','🦃','🦤','🦚','🦜','🦢'],
+  '🎨 Símbolos':['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','❤️‍🔥','💔','❣️','💕','💞','💓','💗','💖','💘','💝','✨','⭐','🌟','💫','⚡','🔥','💥','❄️','🌈','♾️','⚠️','🔴','🟠','🟡','🟢','🔵','🟣','⚫','⚪','🔶','🔷','🔸','🔹','🔺','🔻','💠','🔘','🔲','🔳','▪️','▫️','◾','◽','◼️','◻️','✅','❌','⭕','🚫','💯','✔️','❗','❕','❓','❔','🆕','🆙','🆓','🆒','🆗','🆖','🔔','🔕','📣','📢','🔈','🔉','🔊','🔇']
+};
+const EMOJIS=Object.values(EMOJI_CATS).flat();
 // Versículos fornecidos pelo Fernando (rodízio a cada pagamento de dívida)
 const VERSICULOS_DIVIDA=[
   'Provérbios 22:7 — Assim como o rico domina sobre o pobre, quem toma emprestado se torna servo de quem empresta.',
@@ -423,6 +447,7 @@ const CHAVE=p=>'cfm-v4-'+p;
 function persistir(){try{localStorage.setItem(CHAVE(perfil),JSON.stringify(D));}catch(e){toast('Armazenamento cheio. Use fotos menores.');}}
 function carregar(p){try{const s=localStorage.getItem(CHAVE(p));return s?JSON.parse(s):null;}catch(e){return null;}}
 const fmt=v=>'R$ '+(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+function fmtData(iso){if(!iso)return '';const p=iso.split('-');return p.length===3?p[2]+'/'+p[1]:''}
 const getLanc=()=>D.lanc[mesAtual]||[];
 function catsDoTipo(t){return t==='receita'?D.catsReceita:D.catsDespesa;}
 const SEM_CAT=['📥 Importado','Importado',''];
@@ -502,18 +527,16 @@ function irPara(aba){
   const dica=document.getElementById('dica-sidebar');if(dica)dica.textContent=DICAS[aba];
   render();
 }
-function mudarMes(d){mesAtual=(mesAtual+d+12)%12;if(D&&D.inicial&&!(mesAtual in D.inicial))D.inicial[mesAtual]=0;if(D&&D.previsto&&!(mesAtual in D.previsto))D.previsto[mesAtual]=0;persistir();render();}
+function mudarMes(d){mesAtual=(mesAtual+d+12)%12;if(!(mesAtual in D.inicial))D.inicial[mesAtual]=0;if(!(mesAtual in D.previsto))D.previsto[mesAtual]=0;persistir();render();}
 
 // ===== RENDER =====
 function render(){
-  // Guard 1: D ainda não carregado (troca de perfil com localStorage vazio)
-  if(!D||!D.inicial||!D.previsto||!D.lanc)return;
-  // Guard 2: DOM do app não está visível — sync disparou antes de selecionarPerfil montar a tela
-  if(!document.getElementById('saldo-atual'))return;
   document.getElementById('label-mes').textContent=MESES[mesAtual];atualizarPills();
   const rec=getLanc().filter(l=>l.tipo==='receita').reduce((s,l)=>s+l.valor,0);
   const desp=getLanc().filter(l=>l.tipo==='despesa').reduce((s,l)=>s+l.valor,0);
-  const ini=D.inicial[mesAtual]??0,atual=ini+rec-desp,prev=D.previsto[mesAtual]??atual;
+  // Saldo inicial = soma dos saldoInicial de todas as contas
+  const ini=D.contas.reduce((s,c)=>s+(c.saldoInicial||0),0);
+  const atual=ini+rec-desp,prev=D.previsto[mesAtual]??atual;
   document.getElementById('saldo-inicial').textContent=fmt(ini);
   document.getElementById('saldo-atual').textContent=fmt(atual);
   document.getElementById('saldo-previsto').textContent=fmt(prev);
@@ -600,7 +623,7 @@ function renderLancamentos(){
       <div class="flex justify-between items-center flex-1 min-w-0">
         <div class="flex items-center space-x-2 min-w-0">${iconeBadge(cta,'w-6 h-6','text-[9px]')}
           <div class="min-w-0"><p class="text-sm font-medium text-gray-700 truncate">${l.desc}</p>
-          <p class="text-[11px] text-gray-400 truncate">${l.cat}${l.sub?' › '+l.sub:''}${l.cartao?' · 💳 '+l.cartao:''}</p></div></div>
+          <p class="text-[11px] text-gray-400 truncate">${l.data?'<span class="font-mono text-gray-500">'+fmtData(l.data)+'</span> · ':''}${l.cat}${l.sub?' › '+l.sub:''}${l.cartao?' · 💳 '+l.cartao:''}</p></div></div>
         <div class="flex items-center space-x-2 ml-2 shrink-0"><span class="valor text-sm font-semibold ${l.tipo==='despesa'?'text-goiaba':'text-folha'}">${l.tipo==='despesa'?'−':'+'} ${fmt(l.valor)}</span>
           <button onclick="editarLancInline(${idx})" class="text-gray-300 hover:text-folha text-xs"><i class="fas fa-pen"></i></button>
           <button onclick="excluirLancamento(${idx})" class="text-gray-300 hover:text-goiaba text-xs"><i class="fas fa-trash"></i></button></div>
@@ -643,12 +666,13 @@ function editarLancInline(idx){
     <input id="el-desc" value="${l.desc.replace(/"/g,'&quot;')}" class="w-full bg-white border border-gray-200 rounded-lg py-1.5 px-2 text-sm mb-2">
     <div class="grid grid-cols-2 gap-2 mb-2">
       <input id="el-valor" type="number" step="0.01" value="${l.valor}" class="valor bg-white border border-gray-200 rounded-lg py-1.5 px-2 text-sm">
-      <select id="el-conta" class="bg-white border border-gray-200 rounded-lg py-1.5 px-2 text-sm">${D.contas.map(c=>`<option ${c.nome===l.conta?'selected':''}>${c.nome}</option>`).join('')}</select>
+      <input id="el-data" type="date" value="${l.data||''}" class="bg-white border border-gray-200 rounded-lg py-1.5 px-2 text-sm">
     </div>
     <div class="grid grid-cols-2 gap-2 mb-2">
+      <select id="el-conta" class="bg-white border border-gray-200 rounded-lg py-1.5 px-2 text-sm">${D.contas.map(c=>`<option ${c.nome===l.conta?'selected':''}>${c.nome}</option>`).join('')}</select>
       <select id="el-cat" onchange="atualizarElSub()" class="bg-white border border-gray-200 rounded-lg py-1.5 px-2 text-sm">${cats.map(c=>`<option ${c.nome===l.cat?'selected':''}>${c.nome}</option>`).join('')}</select>
-      <select id="el-sub" class="bg-white border border-gray-200 rounded-lg py-1.5 px-2 text-sm">${cat&&cat.sub.length?'<option value="">— sub —</option>'+cat.sub.map(s=>`<option ${s===l.sub?'selected':''}>${s}</option>`).join(''):'<option value="">—</option>'}</select>
     </div>
+    <select id="el-sub" class="w-full bg-white border border-gray-200 rounded-lg py-1.5 px-2 text-sm mb-2">${cat&&cat.sub.length?'<option value="">— sub —</option>'+cat.sub.map(s=>`<option ${s===l.sub?'selected':''}>${s}</option>`).join(''):'<option value="">—</option>'}</select>
     <div class="flex gap-2"><button onclick="render()" class="flex-1 border border-gray-300 text-gray-600 text-sm font-semibold py-1.5 rounded-lg">Cancelar</button>
     <button onclick="salvarEdicaoLanc(${idx})" class="flex-1 bg-mata text-papel text-sm font-bold py-1.5 rounded-lg">Salvar</button></div>`;
   lista.prepend(div);
@@ -667,6 +691,7 @@ function salvarEdicaoLanc(idx){
   l.conta=document.getElementById('el-conta').value;
   l.cat=document.getElementById('el-cat').value;
   l.sub=document.getElementById('el-sub').value;
+  const d=document.getElementById('el-data');if(d&&d.value)l.data=d.value;
   persistir();render();toast('Lançamento atualizado');
 }
 function excluirLancamento(i){askConfirm('Excluir este lançamento?',()=>{D.lanc[mesAtual].splice(i,1);persistir();render();});}
@@ -708,6 +733,13 @@ function editarSaldoContaInline(i,el){
   const salvar=()=>{const v=parseFloat(inp.value);if(!isNaN(v))D.contas[i].saldoInicial=v;persistir();render();};
   inp.addEventListener('blur',salvar);inp.addEventListener('keydown',e=>{if(e.key==='Enter')salvar();});
 }
+function editarSaldoContaConf(i,el){
+  const inp=document.createElement('input');inp.type='number';inp.step='0.01';inp.value=D.contas[i].saldoInicial||0;
+  inp.className='valor w-28 border-b border-folha outline-none text-[11px]';
+  el.replaceWith(inp);inp.focus();inp.select();
+  const salvar=()=>{const v=parseFloat(inp.value);if(!isNaN(v))D.contas[i].saldoInicial=v;persistir();render();};
+  inp.addEventListener('blur',salvar);inp.addEventListener('keydown',e=>{if(e.key==='Enter')salvar();if(e.key==='Escape')render();});
+}
 function novaContaInline(){
   const cont=document.getElementById(abaAtual==='contas'?'area-contas':'conf-contas');
   const div=document.createElement('div');div.className='bg-papel border-2 border-folha rounded-2xl p-4 anima-pop';
@@ -740,7 +772,7 @@ function renderConfContas(){
   cont.innerHTML=D.contas.map((c,i)=>{
     const m=por[c.nome]||{r:0,d:0},saldo=(c.saldoInicial||0)+m.r-m.d;
     return `<div class="py-2"><div class="flex justify-between items-center"><div class="flex items-center space-x-3 min-w-0">${iconeBadge(c,'w-8 h-8','text-xs')}<div class="min-w-0"><p class="text-sm font-medium truncate">${c.nome}</p>
-      <p class="valor text-[11px] text-gray-400">Saldo inicial: ${fmt(c.saldoInicial||0)}</p>
+      <p class="valor text-[11px] text-gray-400">Saldo inicial: <span class="cursor-pointer hover:text-folha underline decoration-dashed" onclick="editarSaldoContaConf(${i},this)">${fmt(c.saldoInicial||0)}</span></p>
       <p class="valor text-xs font-semibold ${saldo>=0?'text-folha':'text-goiaba'}">Saldo atual: ${fmt(saldo)}</p></div></div>
     <div class="flex items-center space-x-3 shrink-0 ml-2"><button onclick="menuIconeConta(${i})" class="text-gray-300 hover:text-folha text-xs" title="Personalizar"><i class="fas fa-palette"></i></button>
     <button onclick="excluirConta(${i})" class="text-gray-300 hover:text-goiaba text-xs"><i class="fas fa-trash"></i></button></div></div><div id="conf-editor-conta-${i}"></div></div>`;
@@ -946,8 +978,8 @@ function renderReserva(){
       <div><p class="text-[11px] text-gray-400">Guardado</p><p class="valor text-2xl font-bold text-folha">${(r.meta>0||r.atual>0)?fmt(r.atual):'R$ 0,00'}</p></div>
       <div class="text-right"><p class="text-[11px] text-gray-400">Meta <button onclick="editarReservaCampoInline('meta',this)" class="text-folha"><i class="fas fa-pen text-[10px]"></i></button></p><p class="valor text-lg font-semibold">${fmt(r.meta||0)}</p></div>
     </div>
-    <div class="w-full bg-gray-100 h-4 rounded-full overflow-hidden mb-1"><div class="bg-folha h-full rounded-full barra-anim flex items-center justify-end pr-2" style="width:${pct}%">${pct>15?`<span class="text-[9px] text-white font-bold">${pct.toFixed(0)}%</span>`:''}</div></div>
-    <div class="flex justify-between text-[10px] text-gray-400 mb-4">${marcos.map(m=>`<span class="${pct>=m?'text-folha font-bold':''}">${m>=100?'🏆':'●'} ${m}%</span>`).join('')}</div>
+    <div class="w-full bg-gray-100 h-4 rounded-full overflow-hidden mb-1"><div class="bg-folha h-full rounded-full barra-anim flex items-center justify-end pr-2" style="width:${pct<=0?'0':pct+'%'};min-width:0">${pct>15?`<span class="text-[9px] text-white font-bold">${pct.toFixed(0)}%</span>`:''}</div></div>
+    <div class="flex justify-between text-[10px] text-gray-400 mb-4">${marcos.map(m=>`<span class="${pct>0&&pct>=m?'text-folha font-bold':''}">${m>=100?'🏆':'●'} ${m}%</span>`).join('')}</div>
     <p class="text-[11px] text-gray-400 mb-3">Guardado em: <span class="font-semibold text-gray-600">${r.onde}</span></p>
     <div id="reserva-onde-box" class="hidden mb-4"></div>
     <div class="flex gap-2"><input id="res-aporte" type="number" step="0.01" placeholder="Quanto guardou agora? R$" class="valor flex-1 bg-gray-50 border border-gray-200 rounded-xl py-2.5 px-3 text-sm"><button onclick="aportarReserva()" class="bg-mata text-papel text-sm font-bold px-4 rounded-xl">Guardar</button></div>`;
@@ -1160,7 +1192,17 @@ function setEmojiCat(ci,em){const c=catsDoTipo(tabCatAtual)[ci];c.nome=(em+' '+t
 function menuIconeSub(ci,si){
   const box=document.getElementById(`sub-icone-editor-${ci}-${si}`);if(!box)return;
   if(box.dataset.open){box.innerHTML='';box.dataset.open='';return;}box.dataset.open='1';
-  box.innerHTML=`<div class="bg-papel border border-folha/20 rounded-lg p-2 ml-6 my-1 anima-pop"><div class="flex flex-wrap gap-1">${EMOJIS.slice(0,24).map(e=>`<button onclick="setEmojiSub(${ci},${si},'${e}')" class="text-base p-1 hover:bg-gray-100 rounded">${e}</button>`).join('')}</div></div>`;
+  const catKeys=Object.keys(EMOJI_CATS);
+  const gridId=`sub-emoji-grid-${ci}-${si}`;
+  const tabsHTML=catKeys.map(k=>`<button class="emoji-pop-tab text-[13px] px-1.5 py-1" data-cat="${k}" onclick="window._renderSubEmojiGrid('${gridId}',this,'${k}')">${k.split(' ')[0]}</button>`).join('');
+  box.innerHTML=`<div class="bg-papel border border-folha/20 rounded-lg ml-4 my-1 anima-pop overflow-hidden"><div class="flex overflow-x-auto gap-1 px-2 pt-1.5 border-b border-gray-100" style="scrollbar-width:none">${tabsHTML}</div><div id="${gridId}" class="emoji-pop-grid" style="max-height:160px"></div></div>`;
+  window._renderSubEmojiGrid=function(gid,tabEl,cat){
+    const g=document.getElementById(gid);if(!g)return;
+    g.innerHTML=EMOJI_CATS[cat].map(e=>`<button onclick="setEmojiSub(${ci},${si},'${e}')" class="text-lg p-1 rounded hover:bg-gray-100">${e}</button>`).join('');
+    if(tabEl)tabEl.closest('div').querySelectorAll('.emoji-pop-tab').forEach(b=>b.classList.toggle('active',b===tabEl));
+  };
+  const firstTab=box.querySelector('.emoji-pop-tab');
+  if(firstTab){firstTab.classList.add('active');window._renderSubEmojiGrid(gridId,firstTab,catKeys[0]);}
 }
 function setEmojiSub(ci,si,em){const cats=catsDoTipo(tabCatAtual);cats[ci].sub[si]=(em+' '+textoSemEmoji(cats[ci].sub[si])).trim();persistir();render();}
 function renomearCatTexto(ci,txt,emoji){const c=catsDoTipo(tabCatAtual)[ci];c.nome=((emoji?emoji+' ':'')+txt.trim()).trim();persistir();}
@@ -1182,13 +1224,40 @@ function soltarSub(e,destCi){e.preventDefault();e.currentTarget.classList.remove
 // emoji "/" para inputs de criação
 let emojiCallback=null;
 function checarBarraEmoji(e,input){if(e.key==='/'){e.preventDefault();input.value=input.value.replace(/\/$/,'');abrirEmojiPara(input,em=>{input.value=(em+' '+input.value).trim();});}}
-function abrirEmojiPara(anchor,cb){emojiCallback=cb;const pop=document.getElementById('emoji-pop');pop.innerHTML=EMOJIS.map(em=>`<button onclick="escolherEmoji('${em}')">${em}</button>`).join('');const rect=anchor.getBoundingClientRect();pop.style.left=Math.min(rect.left,window.innerWidth-290)+'px';pop.style.top=(rect.bottom+window.scrollY+4)+'px';pop.classList.remove('hidden');}
+function abrirEmojiPara(anchor,cb){
+  emojiCallback=cb;
+  const pop=document.getElementById('emoji-pop');
+  const catKeys=Object.keys(EMOJI_CATS);
+  let catAtiva=catKeys[0];
+  function renderGrid(cat){
+    pop.querySelector('.emoji-pop-grid').innerHTML=EMOJI_CATS[cat].map(em=>`<button onclick="escolherEmoji('${em}')">${em}</button>`).join('');
+    pop.querySelectorAll('.emoji-pop-tab').forEach(b=>{b.classList.toggle('active',b.dataset.cat===cat);});
+  }
+  pop.innerHTML=`<div class="emoji-pop-tabs">${catKeys.map(k=>`<button class="emoji-pop-tab" data-cat="${k}" onclick="(function(el,k){el.closest('.emoji-pop').querySelectorAll('.emoji-pop-tab').forEach(b=>b.classList.toggle('active',b.dataset.cat===k));el.closest('.emoji-pop').querySelector('.emoji-pop-grid').innerHTML=Object.values(window.EMOJI_CATS_MAP||{})[0]||'';window._renderEmojiGrid(k);})(this,'${k}')">${k.split(' ')[0]}</button>`).join('')}</div><div class="emoji-pop-grid"></div>`;
+  window.EMOJI_CATS_MAP=EMOJI_CATS;
+  window._renderEmojiGrid=function(cat){pop.querySelector('.emoji-pop-grid').innerHTML=EMOJI_CATS[cat].map(em=>`<button onclick="escolherEmoji('${em}')">${em}</button>`).join('');pop.querySelectorAll('.emoji-pop-tab').forEach(b=>b.classList.toggle('active',b.dataset.cat===cat));};
+  window._renderEmojiGrid(catKeys[0]);
+  pop.querySelector('.emoji-pop-tab').classList.add('active');
+  const rect=anchor.getBoundingClientRect();
+  const left=Math.min(rect.left,window.innerWidth-310);
+  const top=rect.bottom+window.scrollY+4;
+  pop.style.left=left+'px';pop.style.top=top+'px';
+  pop.classList.remove('hidden');
+}
 function escolherEmoji(em){document.getElementById('emoji-pop').classList.add('hidden');if(emojiCallback)emojiCallback(em);emojiCallback=null;}
 document.addEventListener('click',e=>{const pop=document.getElementById('emoji-pop');if(pop&&!pop.contains(e.target)&&e.target.tagName!=='INPUT'&&!e.target.closest('[onclick*="abrirEmojiPara"]'))pop.classList.add('hidden');});
 
 // ===== MODAL LANÇAMENTO =====
 function fabClick(){if(abaAtual==='cartoes')novoCartaoInline();else abrirModal();}
-function abrirModal(){document.getElementById('modal').classList.remove('hidden');atualizarCatsModal();document.getElementById('inp-desc').focus();}
+function abrirModal(){
+  document.getElementById('modal').classList.remove('hidden');
+  atualizarCatsModal();
+  // data padrão = hoje
+  const hoje=new Date();
+  const ano=hoje.getFullYear(),mes=String(hoje.getMonth()+1).padStart(2,'0'),dia=String(hoje.getDate()).padStart(2,'0');
+  document.getElementById('inp-data').value=`${ano}-${mes}-${dia}`;
+  document.getElementById('inp-desc').focus();
+}
 function fecharModal(){document.getElementById('modal').classList.add('hidden');}
 function setTipo(t){tipoLancamento=t;document.getElementById('btn-despesa').className='flex-1 py-2 rounded-full '+(t==='despesa'?'bg-goiaba text-white':'text-gray-500');document.getElementById('btn-receita').className='flex-1 py-2 rounded-full '+(t==='receita'?'bg-folha text-white':'text-gray-500');atualizarCatsModal();}
 function atualizarCatsModal(){const sel=document.getElementById('inp-cat');if(!sel)return;sel.innerHTML=catsDoTipo(tipoLancamento).map(c=>`<option>${c.nome}</option>`).join('');atualizarSubcats();}
@@ -1197,8 +1266,9 @@ function salvarLancamento(){
   const desc=document.getElementById('inp-desc').value.trim(),valor=parseFloat(document.getElementById('inp-valor').value);
   if(!desc||!valor||valor<=0){toast('Preencha descrição e valor.');return;}
   const conta=document.getElementById('inp-conta').value,cat=document.getElementById('inp-cat').value,sub=document.getElementById('inp-subcat').value;
+  const data=document.getElementById('inp-data').value||new Date().toISOString().slice(0,10);
   if(!D.lanc[mesAtual])D.lanc[mesAtual]=[];
-  D.lanc[mesAtual].unshift({desc,valor,tipo:tipoLancamento,conta,cat,sub,cartao:''});
+  D.lanc[mesAtual].unshift({desc,valor,tipo:tipoLancamento,conta,cat,sub,cartao:'',data});
   document.getElementById('inp-desc').value='';document.getElementById('inp-valor').value='';
   persistir();fecharModal();render();toast('Lançamento salvo');
 }
@@ -1348,6 +1418,7 @@ function mostrarRevisaoImport(){
     // subcategorias da categoria atual
     const catObj=todasCats.find(c=>c.nome===it.cat);
     const subs=catObj&&catObj.sub&&catObj.sub.length?catObj.sub:[];
+    const contaPadrao=importModoCartao?'':(D.contas[0]?.nome||'');
     return `<div id="imp-linha-${i}" class="bg-white rounded-xl p-3 border border-gray-100 space-y-2">
       <div class="flex items-center gap-2">
         <span class="valor text-xs font-bold ${cor} shrink-0">${sinal} ${fmt(it.valor)}</span>
@@ -1356,11 +1427,19 @@ function mostrarRevisaoImport(){
         <button onclick="removerLinhaImport(${i})" class="text-gray-300 hover:text-goiaba text-xs shrink-0" title="Remover"><i class="fas fa-trash"></i></button>
       </div>
       <div class="flex gap-2 flex-wrap">
+        <input type="date" value="${it.data||''}" onchange="importados[${i}].data=this.value"
+               class="bg-gray-50 border border-gray-200 rounded-lg py-1.5 px-2 text-xs w-36">
+        <select onchange="importados[${i}].conta=this.value"
+                class="bg-gray-50 border border-gray-200 rounded-lg py-1.5 px-2 text-xs min-w-[100px]">
+          ${D.contas.map(c=>`<option value="${c.nome}" ${(it.conta||contaPadrao)===c.nome?'selected':''}>${c.nome}</option>`).join('')}
+        </select>
         <select onchange="importados[${i}].tipo=this.value;atualizarLinhaImport(${i})"
-                class="bg-gray-50 border border-gray-200 rounded-lg py-1.5 px-2 text-xs min-w-[90px]">
+                class="bg-gray-50 border border-gray-200 rounded-lg py-1.5 px-2 text-xs min-w-[80px]">
           <option value="despesa" ${it.tipo==='despesa'?'selected':''}>Despesa</option>
           <option value="receita" ${it.tipo==='receita'?'selected':''}>Receita</option>
         </select>
+      </div>
+      <div class="flex gap-2 flex-wrap">
         <select id="imp-cat-${i}" onchange="importados[${i}].cat=this.value;atualizarLinhaImport(${i})"
                 class="flex-1 bg-gray-50 border ${it.cat?'border-gray-200':'border-amber-400'} rounded-lg py-1.5 px-2 text-xs min-w-[120px]">
           <option value="">— escolha a categoria —</option>
@@ -1416,7 +1495,9 @@ function confirmarImport(){
     D.lanc[mesAtual].push({
       desc:it.desc,valor:it.valor,tipo:it.tipo,
       conta:it.conta||contaPadrao,
-      cat:it.cat||'📦 Outros',sub:it.sub||'',cartao:importModoCartao?importCartaoNome:''
+      cat:it.cat||'📦 Outros',sub:it.sub||'',
+      cartao:importModoCartao?importCartaoNome:'',
+      data:it.data||new Date().toISOString().slice(0,10)
     });
   });
   const n=ativos.length;importados=[];
@@ -1430,7 +1511,12 @@ function parseOFX(txt){
     const memo=(b.match(/<MEMO>([^<\r\n]*)/i)||[])[1]||(b.match(/<NAME>([^<\r\n]*)/i)||[])[1]||'Transação';
     const valor=parseFloat(valorTag.replace(',','.'));
     if(isNaN(valor)||valor===0)return;
-    itens.push({desc:memo.trim(),valor:Math.abs(valor),tipo:valor<0?'despesa':'receita',cat:'',sub:''});
+    // extrai data: DTPOSTED formato YYYYMMDD ou YYYYMMDDHHMMSS
+    const dtTag=(b.match(/<DTPOSTED>([^<\r\n]*)/i)||[])[1]||'';
+    const dtStr=dtTag.replace(/[^0-9]/g,'').slice(0,8);
+    let data='';
+    if(dtStr.length===8){data=`${dtStr.slice(0,4)}-${dtStr.slice(4,6)}-${dtStr.slice(6,8)}`;}
+    itens.push({desc:memo.trim(),valor:Math.abs(valor),tipo:valor<0?'despesa':'receita',cat:'',sub:'',data});
   });
   return itens;
 }
@@ -1495,7 +1581,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
 <!-- Supabase via CDN -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 
-<!-- CFM Sync v3 - anti-loop com deviceId -->
+<!-- CFM Sync v2 - corrigido -->
 <script>
 (function() {
   const SUPABASE_URL = 'https://aiyptgdemugbapbfevcw.supabase.co';
@@ -1505,29 +1591,20 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
     quitanda: '138deb76-4a0b-40a6-a713-f2cadf2c5160'
   };
 
-  // deviceId único por sessão — identifica se a mudança no Supabase veio DESTE device.
-  // Usa sessionStorage (não localStorage) para não interferir nos dados do app nem
-  // sobreviver a reloads, e ser independente entre abas.
-  let deviceId = sessionStorage.getItem('cfm-device-id');
-  if (!deviceId) {
-    deviceId = 'dev-' + Math.random().toString(36).slice(2, 10) + '-' + Date.now();
-    sessionStorage.setItem('cfm-device-id', deviceId);
-  }
-  console.log('📱 CFM deviceId:', deviceId);
-
   let syncClient      = null;
   let ultimoSync      = 0;
   let syncing         = false;
-  let baixando        = false; // bloqueia sincronizar() enquanto baixamos do Supabase
   let pollingInterval = null;
   let ultimoUpdatedAt = null;
 
+  // Sempre lê o perfil ativo real (variável global `perfil` do app)
   function perfilAtivo() {
     return (typeof perfil !== 'undefined' && perfil)
       ? perfil
       : (localStorage.getItem('cfm-perfil-ativo') || 'pessoal');
   }
 
+  // Converte índice JS (0=Jan) para data válida "YYYY-MM-01"
   function mesParaData(mesIdx) {
     const ano = new Date().getFullYear();
     const mm  = String(parseInt(mesIdx, 10) + 1).padStart(2, '0');
@@ -1539,7 +1616,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
     if (!window.supabase) { console.error('❌ Supabase CDN não carregou'); return; }
     syncClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
     window.cfmSyncClient = syncClient;
-    console.log('✅ CFM Sync v3 iniciado');
+    console.log('✅ CFM Sync v2 iniciado');
     hookPersistir();
     iniciarPolling();
   }
@@ -1556,11 +1633,10 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
     console.log('🔗 Hook persistir() instalado');
   }
 
-  // ── sync: localStorage → Supabase ───────────────────────────────────
+  // ── sync: localStorage → Supabase (delete + insert, sem duplicação) ─
   async function sincronizar() {
     if (!syncClient || !navigator.onLine) return;
-    if (syncing || baixando) return; // não sobe enquanto estamos baixando
-
+    if (syncing) return;
     syncing = true;
     ultimoSync = Date.now();
 
@@ -1572,6 +1648,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
       const dados = JSON.parse(localStorage.getItem('cfm-v4-' + p) || '{}');
       if (!dados || !dados.lanc) { syncing = false; return; }
 
+      // Apaga tudo do perfil e reinserindo o estado atual (sem duplicação)
       await syncClient.from('transactions').delete().eq('profile_id', id);
 
       const rows = [];
@@ -1583,13 +1660,12 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
           rows.push({
             id:          id + '-' + mesIdx + '-' + i + '-' + (tx.desc||'').replace(/[^a-zA-Z0-9]/g,'').slice(0,16),
             profile_id:  id,
-            device_id:   deviceId, // identifica o device de origem para anti-loop
             type:        tx.tipo === 'receita' ? 'income' : 'expense',
             category:    tx.cat  || 'Sem categoria',
             subcategory: tx.sub  || '',
             description: tx.desc || '',
             amount:      parseFloat(tx.valor) || 0,
-            date:        mesParaData(mesIdx),
+            date:        mesParaData(mesIdx),  // sempre válida: 2026-08-01
             notes:       tx.conta ? 'Conta: ' + tx.conta : '',
             updated_at:  new Date().toISOString()
           });
@@ -1608,7 +1684,6 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
         const cRows = dados.contas.map(c => ({
           id:         id + '-conta-' + (c.nome||'').replace(/[^a-zA-Z0-9]/g,'').slice(0,16),
           profile_id: id,
-          device_id:  deviceId,
           name:       c.nome  || 'Conta',
           type:       'bank',
           balance:    parseFloat(c.saldoInicial || c.saldo) || 0,
@@ -1620,7 +1695,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
         }
       }
 
-      // Atualiza baseline do polling com o timestamp que acabamos de gravar
+      // Atualiza marca d'água para o polling não reprocessar o que acabamos de enviar
       const { data: latest } = await syncClient
         .from('transactions').select('updated_at')
         .eq('profile_id', id).order('updated_at', { ascending: false }).limit(1);
@@ -1633,41 +1708,30 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
     }
   }
 
-  // ── polling: detecta mudanças de OUTRO device ───────────────────────
+  // ── polling: detecta mudanças de outro device ───────────────────────
   function iniciarPolling() {
     if (pollingInterval) clearInterval(pollingInterval);
     ultimoUpdatedAt = null;
 
     async function checar() {
-      if (!syncClient || !navigator.onLine || syncing || baixando) return;
+      if (!syncClient || !navigator.onLine || syncing) return;
       try {
         const p  = perfilAtivo();
         const id = PROFILE_IDS[p];
         if (!id) return;
 
         const { data, error } = await syncClient
-          .from('transactions')
-          .select('updated_at, device_id')
-          .eq('profile_id', id)
-          .order('updated_at', { ascending: false })
-          .limit(1);
+          .from('transactions').select('updated_at')
+          .eq('profile_id', id).order('updated_at', { ascending: false }).limit(1);
 
         if (error || !data || data.length === 0) return;
-        const { updated_at: novo, device_id: origemDevice } = data[0];
+        const novo = data[0].updated_at;
 
-        // Primeira execução: registra baseline sem baixar
         if (ultimoUpdatedAt === null) { ultimoUpdatedAt = novo; return; }
 
         if (novo !== ultimoUpdatedAt) {
+          console.log('📡 Mudança remota detectada — baixando...');
           ultimoUpdatedAt = novo;
-
-          // Só baixa se veio de OUTRO device — ignora mudanças próprias
-          if (origemDevice && origemDevice === deviceId) {
-            console.log('🔄 Mudança própria detectada pelo polling — ignorando');
-            return;
-          }
-
-          console.log('📡 Mudança de outro device detectada — baixando...');
           await baixarDoSupabase(id, p);
         }
       } catch(e) {
@@ -1682,15 +1746,12 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
 
   // ── download: Supabase → localStorage + render ──────────────────────
   async function baixarDoSupabase(profileId, perfilChave) {
-    if (perfilChave !== perfilAtivo()) return;
-    if (baixando) return;
+    if (perfilChave !== perfilAtivo()) return; // só baixa se for o perfil ativo
 
-    baixando = true;
     try {
       const { data: txs }    = await syncClient.from('transactions').select('*').eq('profile_id', profileId);
       const { data: contas } = await syncClient.from('accounts').select('*').eq('profile_id', profileId);
 
-      // Lê o localStorage do perfil correto — nunca mistura perfis
       const local = JSON.parse(localStorage.getItem('cfm-v4-' + perfilChave) || '{}');
 
       if (txs && txs.length > 0) {
@@ -1726,38 +1787,26 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
         });
       }
 
-      // Grava no localStorage do perfil correto sem passar pelo hook de persistir()
       localStorage.setItem('cfm-v4-' + perfilChave, JSON.stringify(local));
-
-      // Só aplica em D se o perfil ativo ainda é o mesmo (sem race condition)
-      if (typeof D !== 'undefined' && D && perfilChave === perfilAtivo()) {
-        Object.assign(D, local);
-      }
-
-      // Renderiza só se o DOM do app estiver visível
-      if (typeof render === 'function' && document.getElementById('saldo-atual')) {
-        render();
-        console.log('✅ Tela atualizada (outro device →', perfilChave, ')');
-      }
+      if (typeof D !== 'undefined') Object.assign(D, local);
+      if (typeof render === 'function') { render(); console.log('✅ Tela atualizada do Supabase'); }
 
     } catch(e) {
       console.error('❌ Erro ao baixar:', e.message);
-    } finally {
-      baixando = false;
     }
   }
 
   // ── API pública ──────────────────────────────────────────────────────
+  // Chamado quando o usuário troca de perfil
   window.CFMSyncTrocarPerfil = function(novoPerfil) {
     console.log('🔄 Sync: trocando para', novoPerfil);
     ultimoSync = 0;
-    ultimoUpdatedAt = null; // reseta baseline ao trocar de perfil
     iniciarPolling();
   };
   window.CFMSyncAgora  = () => sincronizar();
   window.CFMSyncStatus = () => ({
-    online: navigator.onLine, perfil: perfilAtivo(), deviceId,
-    syncing, baixando, ultimoSync: new Date(ultimoSync).toLocaleTimeString('pt-BR')
+    online: navigator.onLine, perfil: perfilAtivo(),
+    syncing, ultimoSync: new Date(ultimoSync).toLocaleTimeString('pt-BR')
   });
 
   if (document.readyState === 'loading') {
@@ -1766,7 +1815,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
     setTimeout(iniciarSync, 800);
   }
 
-  console.log('✅ CFM Sync v3 carregado');
+  console.log('✅ CFM Sync v2 carregado');
 })();
 </script>
 
