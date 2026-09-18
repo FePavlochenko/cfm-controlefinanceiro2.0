@@ -1,5 +1,5 @@
-// CFM Service Worker v2.1 - força atualização automática (fix cache preso)
-const CACHE_NAME = 'cfm-v4';
+// CFM Service Worker v2.2 - corrige cache indevido das chamadas do Supabase (dados presos)
+const CACHE_NAME = 'cfm-v5';
 const URLS_TO_CACHE = [
   '/',
   '/manifest.json'
@@ -45,10 +45,20 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // CDN externos: Cache First (fonts, tailwind, fontawesome, supabase)
-  if (url.includes('cdn.') || url.includes('cdnjs.') || 
+  // Supabase (banco de dados): NUNCA cachear — precisa sempre ser dado fresco.
+  // Antes essas chamadas caíam sem querer na regra de CDN abaixo (porque a URL
+  // contém "supabase"), o que travava as transações na primeira versão baixada.
+  if (url.includes('supabase.co')) {
+    event.respondWith(
+      fetch(event.request, { cache: 'no-store' })
+    );
+    return;
+  }
+
+  // CDN externos: Cache First (fonts, tailwind, fontawesome, biblioteca supabase-js via jsdelivr)
+  if (url.includes('cdn.') || url.includes('cdnjs.') ||
       url.includes('fonts.google') || url.includes('fontawesome') ||
-      url.includes('jsdelivr') || url.includes('supabase')) {
+      url.includes('jsdelivr')) {
     event.respondWith(
       caches.match(event.request).then((cached) => {
         return cached || fetch(event.request).then((response) => {
