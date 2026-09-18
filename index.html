@@ -1722,8 +1722,30 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('/service-worker.js')
-        .then(reg => console.log('✅ PWA ativo'))
+        .then(reg => {
+          console.log('✅ PWA ativo');
+
+          // Detecta quando uma nova versão do Service Worker foi baixada
+          reg.addEventListener('updatefound', () => {
+            const newWorker = reg.installing;
+            if (!newWorker) return;
+            newWorker.addEventListener('statechange', () => {
+              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                console.log('🔄 Nova versão do CFM instalada, aplicando atualização...');
+              }
+            });
+          });
+        })
         .catch(err => console.warn('⚠️ Erro:', err));
+    });
+
+    // Quando o novo Service Worker assume o controle, recarrega a página
+    // automaticamente para o usuário já ver a versão nova (evita cache preso)
+    let cfmSwRefreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (cfmSwRefreshing) return;
+      cfmSwRefreshing = true;
+      window.location.reload();
     });
   }
 </script>
