@@ -1,5 +1,5 @@
-// CFM Service Worker v2.0
-const CACHE_NAME = 'cfm-v3';
+// CFM Service Worker v2.1 - força atualização automática (fix cache preso)
+const CACHE_NAME = 'cfm-v4';
 const URLS_TO_CACHE = [
   '/',
   '/manifest.json'
