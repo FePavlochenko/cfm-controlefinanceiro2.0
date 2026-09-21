@@ -60,7 +60,7 @@ tailwind.config={theme:{extend:{
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="CFM">
-<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png?v=2">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="msapplication-TileColor" content="#123B2A">
 </head>
@@ -100,7 +100,7 @@ tailwind.config={theme:{extend:{
 <div id="app" class="hidden flex min-h-screen">
   <aside class="hidden md:flex flex-col w-64 bg-white border-r border-gray-100 p-4 sticky top-0 h-screen shrink-0 overflow-y-auto">
     <div class="flex items-center justify-between px-2 mb-2 mt-1">
-      <div class="flex items-center space-x-2"><img src="/icon-192.png" alt="CFM" class="w-9 h-9 rounded-xl object-cover shadow shrink-0">
+      <div class="flex items-center space-x-2"><img src="/icon-192.png?v=2" alt="CFM" class="w-9 h-9 rounded-xl object-cover shadow shrink-0">
         <div><p class="font-extrabold leading-none text-sm">CFM</p><p class="text-[10px] text-gray-400 leading-tight">Controle Financeiro</p></div></div>
       <button onclick="voltarPerfil()" title="Trocar perfil" class="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-400 hover:text-mata text-xs"><i class="fas fa-right-left"></i></button>
     </div>
@@ -116,7 +116,7 @@ tailwind.config={theme:{extend:{
   <div class="flex-1 flex flex-col min-w-0 overflow-x-hidden">
     <header class="bg-mata text-papel px-4 md:px-8 pb-5 shadow-md sticky top-0 z-20 rounded-b-[24px] md:rounded-none" style="padding-top:calc(1rem + env(safe-area-inset-top))">
       <div class="flex justify-between items-center mb-3 max-w-5xl mx-auto">
-        <div class="flex items-center space-x-2 md:hidden"><img src="/icon-192.png" alt="CFM" class="w-8 h-8 rounded-lg object-cover shadow shrink-0"><span class="font-bold text-sm" id="titulo-mobile">CFM</span></div>
+        <div class="flex items-center space-x-2 md:hidden"><img src="/icon-192.png?v=2" alt="CFM" class="w-8 h-8 rounded-lg object-cover shadow shrink-0"><span class="font-bold text-sm" id="titulo-mobile">CFM</span></div>
         <div class="hidden md:block font-bold text-lg" id="titulo-aba">Resumo</div>
         <div class="flex items-center space-x-4">
           <button onclick="mudarMes(-1)" class="opacity-70 hover:opacity-100 text-sm"><i class="fas fa-chevron-left"></i></button>
@@ -2097,7 +2097,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
 <!-- Supabase via CDN -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 
-<!-- CFM Sync v2 - corrigido -->
+<!-- CFM Sync v3 -->
 <script>
 (function() {
   const SUPABASE_URL = 'https://aiyptgdemugbapbfevcw.supabase.co';
@@ -2107,227 +2107,28 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
     quitanda: '138deb76-4a0b-40a6-a713-f2cadf2c5160'
   };
 
+  // ── Sync v3 ─────────────────────────────────────────────────────────
+  // Cada parte dos dados do perfil (lançamentos, contas, cartões, categorias,
+  // orçamentos, reservas, dívidas, objetivos, calendário, nome, saldos do mês)
+  // vira um registro JSON na tabela app_state (um por perfil e por parte).
+  // Nada é apagado e regravado às cegas:
+  //  • cada aparelho guarda a "base" = último estado que sincronizou
+  //  • se só o outro aparelho mudou → baixa; se só este mudou → envia
+  //  • se os dois mudaram → junta item a item, usando a base para saber o que
+  //    foi apagado/editado/acrescentado em cada aparelho (ver merge3/mergeLanc)
+  //  • gravação com número de versão: se alguém gravou no meio, refaz a junção
+  //  • aparelho que nunca sincronizou e só tem dados de exemplo NÃO envia nada
+  // A tabela antiga transactions/accounts deixou de ser usada (fica como cópia).
+
   let syncClient      = null;
-  let ultimoSync      = 0;
   let syncing         = false;
+  let pendente        = false;
+  let timer           = null;
   let pollingInterval = null;
-  let ultimoUpdatedAt = null;
+  let conflitosSeguidos = 0;
+  let renderPendente  = false;
+  let ultimaSync      = 0;
 
-  // Sempre lê o perfil ativo real (variável global `perfil` do app)
-  function perfilAtivo() {
-    return (typeof perfil !== 'undefined' && perfil)
-      ? perfil
-      : (localStorage.getItem('cfm-perfil-ativo') || 'pessoal');
-  }
-
-  // Converte índice JS (0=Jan) para data válida "YYYY-MM-01"
-  function mesParaData(mesIdx) {
-    const ano = new Date().getFullYear();
-    const mm  = String(parseInt(mesIdx, 10) + 1).padStart(2, '0');
-    return ano + '-' + mm + '-01';
-  }
-
-  // ── boot ────────────────────────────────────────────────────────────
-  function iniciarSync() {
-    if (!window.supabase) { console.error('❌ Supabase CDN não carregou'); return; }
-    syncClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-    window.cfmSyncClient = syncClient;
-    console.log('✅ CFM Sync v2 iniciado');
-    hookPersistir();
-    iniciarPolling();
-  }
-
-  // ── hook em persistir() ─────────────────────────────────────────────
-  function hookPersistir() {
-    const orig = window.persistir;
-    window.persistir = function() {
-      if (orig) orig.call(this);
-      agendarCartoes(); // cartões sincronizam por conta própria (app_state)
-      const agora = Date.now();
-      if (agora - ultimoSync < 2000) return; // debounce 2s
-      sincronizar();
-    };
-    console.log('🔗 Hook persistir() instalado');
-  }
-
-  // ── sync: localStorage → Supabase (delete + insert, sem duplicação) ─
-  async function sincronizar() {
-    if (!syncClient || !navigator.onLine) return;
-    if (syncing) return;
-    syncing = true;
-    ultimoSync = Date.now();
-
-    try {
-      const p  = perfilAtivo();
-      const id = PROFILE_IDS[p];
-      if (!id) { syncing = false; return; }
-
-      const dados = JSON.parse(localStorage.getItem('cfm-v4-' + p) || '{}');
-      if (!dados || !dados.lanc) { syncing = false; return; }
-
-      // Apaga tudo do perfil e reinserindo o estado atual (sem duplicação)
-      await syncClient.from('transactions').delete().eq('profile_id', id);
-
-      const rows = [];
-      for (const [mesIdx, lista] of Object.entries(dados.lanc)) {
-        if (!Array.isArray(lista)) continue;
-        for (let i = 0; i < lista.length; i++) {
-          const tx = lista[i];
-          if (!tx) continue;
-          rows.push({
-            id:          id + '-' + mesIdx + '-' + i + '-' + (tx.desc||'').replace(/[^a-zA-Z0-9]/g,'').slice(0,16),
-            profile_id:  id,
-            type:        tx.tipo === 'receita' ? 'income' : 'expense',
-            category:    tx.cat  || 'Sem categoria',
-            subcategory: tx.sub  || '',
-            description: tx.desc || '',
-            amount:      parseFloat(tx.valor) || 0,
-            date:        mesParaData(mesIdx),  // sempre válida: 2026-08-01
-            notes:       tx.conta ? 'Conta: ' + tx.conta : '',
-            updated_at:  new Date().toISOString()
-          });
-        }
-      }
-
-      if (rows.length > 0) {
-        const { error } = await syncClient.from('transactions').insert(rows);
-        if (error) console.error('❌ Insert erro:', error.message);
-        else console.log('✅ Sync OK:', rows.length, 'tx →', p);
-      }
-
-      // Contas
-      if (Array.isArray(dados.contas)) {
-        await syncClient.from('accounts').delete().eq('profile_id', id);
-        const cRows = dados.contas.map(c => ({
-          id:         id + '-conta-' + (c.nome||'').replace(/[^a-zA-Z0-9]/g,'').slice(0,16),
-          profile_id: id,
-          name:       c.nome  || 'Conta',
-          type:       'bank',
-          balance:    parseFloat(c.saldoInicial || c.saldo) || 0,
-          updated_at: new Date().toISOString()
-        }));
-        if (cRows.length > 0) {
-          const { error } = await syncClient.from('accounts').insert(cRows);
-          if (error) console.error('❌ Contas erro:', error.message);
-        }
-      }
-
-      // Atualiza marca d'água para o polling não reprocessar o que acabamos de enviar
-      const { data: latest } = await syncClient
-        .from('transactions').select('updated_at')
-        .eq('profile_id', id).order('updated_at', { ascending: false }).limit(1);
-      if (latest && latest[0]) ultimoUpdatedAt = latest[0].updated_at;
-
-    } catch(e) {
-      console.error('❌ Erro sync:', e.message);
-    } finally {
-      syncing = false;
-    }
-  }
-
-  // ── polling: detecta mudanças de outro device ───────────────────────
-  function iniciarPolling() {
-    if (pollingInterval) clearInterval(pollingInterval);
-    ultimoUpdatedAt = null;
-
-    async function checar() {
-      reconciliarCartoes(); // cartões (app_state) — independente das transações
-      if (!syncClient || !navigator.onLine || syncing) return;
-      try {
-        const p  = perfilAtivo();
-        const id = PROFILE_IDS[p];
-        if (!id) return;
-
-        const { data, error } = await syncClient
-          .from('transactions').select('updated_at')
-          .eq('profile_id', id).order('updated_at', { ascending: false }).limit(1);
-
-        if (error || !data || data.length === 0) return;
-        const novo = data[0].updated_at;
-
-        if (ultimoUpdatedAt === null) { ultimoUpdatedAt = novo; return; }
-
-        if (novo !== ultimoUpdatedAt) {
-          console.log('📡 Mudança remota detectada — baixando...');
-          ultimoUpdatedAt = novo;
-          await baixarDoSupabase(id, p);
-        }
-      } catch(e) {
-        console.warn('⚠️ Polling:', e.message);
-      }
-    }
-
-    checar();
-    pollingInterval = setInterval(checar, 15000);
-    console.log('📡 Polling ativo (15s)');
-  }
-
-  // ── download: Supabase → localStorage + render ──────────────────────
-  async function baixarDoSupabase(profileId, perfilChave) {
-    if (perfilChave !== perfilAtivo()) return; // só baixa se for o perfil ativo
-
-    try {
-      const { data: txs }    = await syncClient.from('transactions').select('*').eq('profile_id', profileId);
-      const { data: contas } = await syncClient.from('accounts').select('*').eq('profile_id', profileId);
-
-      const local = JSON.parse(localStorage.getItem('cfm-v4-' + perfilChave) || '{}');
-
-      if (txs && txs.length > 0) {
-        const lanc = {};
-        txs.forEach(tx => {
-          const partes = (tx.date || '').split('-');
-          const mes    = partes.length >= 2 ? parseInt(partes[1], 10) - 1 : new Date().getMonth();
-          if (!lanc[mes]) lanc[mes] = [];
-          lanc[mes].push({
-            desc:   tx.description || '',
-            valor:  parseFloat(tx.amount) || 0,
-            tipo:   tx.type === 'income' ? 'receita' : 'despesa',
-            conta:  (tx.notes || '').replace('Conta: ', ''),
-            cat:    tx.category    || '',
-            sub:    tx.subcategory || '',
-            cartao: ''
-          });
-        });
-        local.lanc = lanc;
-      }
-
-      if (contas && contas.length > 0) {
-        const contasAntes = local.contas || [];
-        local.contas = contas.map(c => {
-          const ex = contasAntes.find(lc => lc.nome === c.name);
-          return {
-            nome:         c.name || 'Conta',
-            saldoInicial: parseFloat(c.balance) || 0,
-            sigla:        ex?.sigla || (c.name || 'C').slice(0, 2).toUpperCase(),
-            cor:          ex?.cor   || 'bg-blue-600',
-            logo:         ex?.logo  || ''
-          };
-        });
-      }
-
-      localStorage.setItem('cfm-v4-' + perfilChave, JSON.stringify(local));
-      if (typeof D !== 'undefined') Object.assign(D, local);
-      if (typeof render === 'function') { render(); console.log('✅ Tela atualizada do Supabase'); }
-
-    } catch(e) {
-      console.error('❌ Erro ao baixar:', e.message);
-    }
-  }
-
-  // ── cartões: D.cartoes ⇄ Supabase (tabela app_state, chave 'cartoes') ──
-  // Os cartões (com a lista de lançamentos de cada um) não cabem nas tabelas
-  // transactions/accounts, então vão inteiros como JSON, um registro por perfil.
-  // Regras:
-  //  • estado sincronizado por aparelho: cfm-cartoes-ts-<perfil> (updated_at) e
-  //    cfm-cartoes-snap-<perfil> (JSON do último estado enviado/recebido)
-  //  • aparelho que nunca sincronizou e só tem o cartão padrão vazio NÃO envia
-  //    (evita apagar no Supabase os dados de outro aparelho)
-  //  • aparelho que nunca sincronizou e tem dados, com registro já existente no
-  //    Supabase: baixa o remoto, guardando antes uma cópia local de segurança
-  //  • mudou só o remoto → baixa; mudou só o local → envia; mudou os dois → local vence
-  let syncingCartoes   = false;
-  let pendenteCartoes  = false;
-  let timerCartoes     = null;
   const deviceId = (function() {
     try {
       let d = localStorage.getItem('cfm-device-id');
@@ -2336,7 +2137,236 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
     } catch(e) { return 'dev-anon'; }
   })();
 
-  function cartoesPadraoVazios(arr) {
+  // Sempre lê o perfil ativo real (variável global `perfil` do app)
+  function perfilAtivo() {
+    return (typeof perfil !== 'undefined' && perfil)
+      ? perfil
+      : (localStorage.getItem('cfm-perfil-ativo') || 'pessoal');
+  }
+
+  // ── utilidades ──────────────────────────────────────────────────────
+  function canon(v) { // JSON com chaves ordenadas, para comparar sem depender da ordem
+    if (v === null || v === undefined) return 'null';
+    if (typeof v !== 'object') return JSON.stringify(v);
+    if (Array.isArray(v)) return '[' + v.map(canon).join(',') + ']';
+    return '{' + Object.keys(v).filter(k => v[k] !== undefined).sort()
+      .map(k => JSON.stringify(k) + ':' + canon(v[k])).join(',') + '}';
+  }
+  function canonLanc(l) { // lançamentos: ignora a ordem dos itens e meses vazios (a ordem varia entre aparelhos)
+    const meses = Object.keys(l || {}).filter(m => Array.isArray(l[m]) && l[m].some(Boolean)).sort();
+    return '{' + meses.map(m => JSON.stringify(m) + ':[' + l[m].filter(Boolean)
+      .map(it => [String(it._id || ''), canon(it)])
+      .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+      .map(x => x[1]).join(',') + ']').join(',') + '}';
+  }
+  function clone(v) { return v === undefined ? undefined : JSON.parse(JSON.stringify(v)); }
+  function novoId() { return 'tx-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8); }
+  function salvarLocal(p) {
+    try { localStorage.setItem('cfm-v4-' + p, JSON.stringify(D)); }
+    catch(e) { console.warn('⚠️ Sync: armazenamento cheio'); }
+  }
+  function guardarBackup(chave, p, valor) { // cópia de segurança do que havia antes da 1ª sincronização
+    try {
+      const k = 'cfm-backup-' + chave + '-primeira-' + p;
+      if (!localStorage.getItem(k))
+        localStorage.setItem(k, JSON.stringify({ em: new Date().toISOString(), dados: valor }));
+    } catch(e) {}
+  }
+
+  // ── lançamentos ─────────────────────────────────────────────────────
+  function impressao(it) { // "é o mesmo lançamento?" sem depender do id
+    return [it.desc, Number(it.valor), it.tipo, it.conta || '', it.cat || '', it.sub || '', it.cartao || ''].join('|');
+  }
+  function lancItens(lanc) {
+    const r = [];
+    Object.keys(lanc || {}).forEach(m => { if (Array.isArray(lanc[m])) lanc[m].forEach(it => { if (it && typeof it === 'object') r.push(it); }); });
+    return r;
+  }
+  function garantirIds() { // todo lançamento precisa de um id estável para a junção
+    if (!D || !D.lanc) return false;
+    let mudou = false;
+    const vistos = new Set();
+    lancItens(D.lanc).forEach(it => {
+      if (!it._id || vistos.has(it._id)) { it._id = novoId(); mudou = true; }
+      vistos.add(it._id);
+    });
+    return mudou;
+  }
+  function lancPadrao(local, p) { // só vazio ou só os lançamentos de exemplo do app?
+    const itens = lancItens(local);
+    if (!itens.length) return true;
+    try {
+      const pad = lancItens(dadosPadrao(p).lanc).map(impressao);
+      const usados = new Set();
+      return itens.every(it => {
+        const f = impressao(it);
+        const i = pad.findIndex((x, ix) => x === f && !usados.has(ix));
+        if (i < 0) return false;
+        usados.add(i);
+        return true;
+      });
+    } catch(e) { return false; }
+  }
+  function adotarIds(local, remoto) { // 1ª sync: mesmo lançamento com ids diferentes → adota o id do remoto
+    const remIds = new Set(lancItens(remoto).map(i => i._id));
+    const locIds = new Set(lancItens(local).map(i => i._id));
+    const livres = {};
+    lancItens(remoto).forEach(r => {
+      if (locIds.has(r._id)) return;
+      const f = impressao(r);
+      if (!livres[f]) livres[f] = [];
+      livres[f].push(r);
+    });
+    lancItens(local).forEach(l => {
+      if (remIds.has(l._id)) return;
+      const arr = livres[impressao(l)];
+      if (arr && arr.length) l._id = arr.shift()._id;
+    });
+  }
+  function mapaPorId(lanc) {
+    const m = new Map();
+    Object.keys(lanc || {}).forEach(mes => {
+      if (!Array.isArray(lanc[mes])) return;
+      lanc[mes].forEach(it => { if (it && it._id) m.set(it._id, { mes: mes, it: it, c: canon(it) }); });
+    });
+    return m;
+  }
+  // junção de 3 vias: base (último estado sincronizado), local e remoto
+  function mergeLanc(base, local, remoto) {
+    const B = mapaPorId(base), L = mapaPorId(local), R = mapaPorId(remoto);
+    const out = {};
+    Object.keys(local || {}).forEach(m => { out[m] = []; });
+    const guardar = (mes, it) => { if (!out[mes]) out[mes] = []; out[mes].push(it); };
+    Object.keys(local || {}).forEach(mes => {
+      if (!Array.isArray(local[mes])) return;
+      local[mes].forEach(it => {
+        if (!it) return;
+        const l = L.get(it._id), r = R.get(it._id), b = B.get(it._id);
+        if (r) {
+          if (l.c === r.c) guardar(mes, it);
+          else if (!b) guardar(mes, Object.assign({}, r.it, it)); // sem base (1ª sync): junta os campos dos dois (ex.: data)
+          else if (r.c === b.c) guardar(mes, it);              // só o local mudou
+          else if (l.c === b.c) guardar(r.mes, r.it);          // só o remoto mudou
+          else guardar(mes, it);                               // os dois mudaram: local vence
+        } else if (b) {
+          if (l.c !== b.c) guardar(mes, it);                   // apagado lá, mas editado aqui → mantém
+        } else {
+          guardar(mes, it);                                    // lançamento novo deste aparelho
+        }
+      });
+    });
+    const novos = {};
+    Object.keys(remoto || {}).forEach(mes => {
+      if (!Array.isArray(remoto[mes])) return;
+      remoto[mes].forEach(it => {
+        if (!it || L.has(it._id)) return;
+        const b = B.get(it._id);
+        if (b && canon(it) === b.c) return;                    // apagado aqui e sem mudança lá → some
+        if (!novos[mes]) novos[mes] = [];
+        novos[mes].push(it);
+      });
+    });
+    Object.keys(novos).forEach(mes => { out[mes] = novos[mes].concat(out[mes] || []); });
+    return out;
+  }
+
+  // ── junção genérica (3 vias) para tudo que não é lançamento ──────────
+  // Objetos: campo a campo. Listas: item a item (identidade = _id, id, nome ou o
+  // próprio conteúdo). Campos "contadores" (saldo da reserva, restante da dívida)
+  // somam as variações dos dois aparelhos. Escalares em conflito: este aparelho
+  // vence (na 1ª sincronização vence o remoto; valor vazio nunca vence valor cheio).
+  const CONTADORES = { atual: 1, restante: 1 };
+  const ehObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
+  const vazioVal = v => v === undefined || v === null || v === 0 || v === '' || v === false;
+
+  function idItem(it) {
+    if (it === null || typeof it !== 'object') return 'p:' + canon(it);
+    if (it._id !== undefined) return '_' + it._id;
+    if (it.id !== undefined)  return 'i' + it.id;
+    if (it.nome !== undefined) return 'n' + it.nome;
+    return 'c' + canon(it);
+  }
+  function indexarLista(arr) {
+    const m = new Map(), cont = {};
+    (arr || []).forEach((it, i) => {
+      const k0 = idItem(it);
+      const n = cont[k0] = (cont[k0] || 0) + 1;
+      m.set(n === 1 ? k0 : k0 + '#' + n, { it: it, c: canon(it), i: i });
+    });
+    return m;
+  }
+  function merge3(b, l, r, pri) {
+    const lc = canon(l), rc = canon(r);
+    if (lc === rc) return l;
+    const temB = b !== undefined;
+    const bc = temB ? canon(b) : null;
+    if (temB) { if (rc === bc) return l; if (lc === bc) return r; }
+    if (ehObj(l) && ehObj(r))            return mergeObj(ehObj(b) ? b : undefined, l, r, pri);
+    if (Array.isArray(l) && Array.isArray(r)) return mergeArr(Array.isArray(b) ? b : undefined, l, r, pri);
+    if (!temB || vazioVal(b)) {          // sem base útil: valor vazio nunca vence valor preenchido
+      if (vazioVal(l) && !vazioVal(r)) return r;
+      if (vazioVal(r) && !vazioVal(l)) return l;
+    }
+    return pri ? r : l;
+  }
+  function mergeObj(b, l, r, pri) {
+    const out = {};
+    const chaves = Object.keys(l).concat(Object.keys(r).filter(k => !(k in l)));
+    chaves.forEach(k => {
+      const bv = b ? b[k] : undefined;
+      const temL = k in l, temR = k in r;
+      if (temL && temR) {
+        if (CONTADORES[k] && typeof l[k] === 'number' && typeof r[k] === 'number' && typeof bv === 'number' &&
+            l[k] !== r[k] && l[k] !== bv && r[k] !== bv) {
+          out[k] = Math.round((bv + (l[k] - bv) + (r[k] - bv)) * 100) / 100;   // as duas variações valem
+        } else out[k] = merge3(bv, l[k], r[k], pri);
+      } else if (temL) {                       // só existe aqui
+        if (bv !== undefined && canon(l[k]) === canon(bv)) return;   // apagado no outro aparelho
+        out[k] = l[k];
+      } else {                                 // só existe no outro
+        if (bv !== undefined && canon(r[k]) === canon(bv)) return;   // apagado aqui
+        out[k] = r[k];
+      }
+    });
+    return out;
+  }
+  function mergeArr(b, l, r, pri) {
+    const B = indexarLista(b), L = indexarLista(l), R = indexarLista(r);
+    const out = [];
+    L.forEach((lv, k) => {
+      const rv = R.get(k), bv = B.get(k);
+      if (rv) out.push(merge3(bv ? bv.it : undefined, lv.it, rv.it, pri));
+      else if (bv) { if (lv.c !== bv.c) out.push(lv.it); }   // apagado no outro, mas editado aqui → mantém
+      else out.push(lv.it);                                   // novo neste aparelho
+    });
+    R.forEach((rv, k) => {
+      if (L.has(k)) return;
+      const bv = B.get(k);
+      if (bv && rv.c === bv.c) return;                        // apagado aqui e sem mudança lá → some
+      out.push(rv.it);
+    });
+    return out;
+  }
+  function mergeGenerico(base, local, remoto) { return merge3(base, local, remoto, base === undefined); }
+
+  // valores de fábrica (já normalizados) para saber se um aparelho "nunca foi usado"
+  function padraoNormalizado(p) {
+    try { const d = clone(dadosPadrao(p)); return (typeof migrar === 'function') ? migrar(d, p) : d; }
+    catch(e) { return {}; }
+  }
+  function padraoGenerico(k) {
+    return (v, p) => {
+      if (v === undefined || v === null || v === '') return true;
+      if (Array.isArray(v) && !v.length) return true;
+      if (ehObj(v) && !Object.keys(v).length) return true;
+      const cru = (function() { try { return dadosPadrao(p)[k]; } catch(e) { return undefined; } })();
+      if (canon(v) === canon(cru)) return true;              // dados de fábrica, ainda sem normalizar
+      let vn = clone(v);
+      if (NORMALIZAR[k] && Array.isArray(vn)) vn = NORMALIZAR[k](vn);
+      return canon(vn) === canon(padraoNormalizado(p)[k]);   // dados de fábrica já normalizados
+    };
+  }
+  function cartoesPadrao(arr) {
     if (!Array.isArray(arr) || arr.length === 0) return true;
     if (arr.length > 1) return false;
     const c = arr[0] || {};
@@ -2344,100 +2374,206 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
            !c.fechamento && !c.logo && Number(c.limite) === 5000 && c.cor === 'bg-purple-700';
   }
 
-  function normalizarCartoes(arr) {
-    arr.forEach(c => {
-      if (c.logo === undefined) c.logo = '';
-      if (c.fechamento === undefined) c.fechamento = '';
-      if (c.lancamentos === undefined) c.lancamentos = [];
-    });
-    return arr;
+  // como deixar cada parte "em ordem" depois de receber do Supabase
+  const NORMALIZAR = {
+    contas:      v => { v.forEach(c => { if (c.logo === undefined) c.logo = ''; }); return v; },
+    cartoes:     v => { v.forEach(c => { if (c.logo === undefined) c.logo = ''; if (c.fechamento === undefined) c.fechamento = ''; if (c.lancamentos === undefined) c.lancamentos = []; }); return v; },
+    catsDespesa: v => { v.forEach(c => { if (!c.sub) c.sub = []; if (c.foto === undefined) c.foto = ''; }); return v; },
+    catsReceita: v => { v.forEach(c => { if (!c.sub) c.sub = []; if (c.foto === undefined) c.foto = ''; }); return v; },
+    reservas:    v => { v.forEach(r => { if (!r.historico) r.historico = []; if (r.foto === undefined) r.foto = ''; if (r.nome === undefined) r.nome = 'Minha reserva'; }); return v; },
+    dividas:     v => { v.forEach(d => { if (!d.pagamentos) d.pagamentos = []; if (d.foto === undefined) d.foto = ''; }); return v; },
+    sistemas:    v => { v.forEach(x => { if (x.meta === undefined) x.meta = (x.valor || 100) * 12; if (x.atual === undefined) x.atual = 0; }); return v; }
+  };
+  const PARTES = [ // [chave em D, forma]
+    ['nome', ''], ['inicial', {}], ['previsto', {}], ['orc', {}],
+    ['catsDespesa', []], ['catsReceita', []], ['contas', []], ['cartoes', []],
+    ['reservas', []], ['dividas', []], ['calendario', []], ['sistemas', []]
+  ];
+
+  const CHAVES = [
+    { chave: 'lanc',
+      vazio:  () => ({}),
+      get:    () => D.lanc,
+      set:    v => { D.lanc = v; if (typeof mesAtual !== 'undefined' && !Array.isArray(D.lanc[mesAtual])) D.lanc[mesAtual] = []; },
+      padrao: (v, p) => lancPadrao(v, p),
+      c:      canonLanc,
+      merge:  mergeLanc,
+      preparar: garantirIds,
+      aoPrimeira: adotarIds }
+  ].concat(PARTES.map(([k, forma]) => ({
+    chave:  k,
+    vazio:  () => clone(forma),
+    get:    () => D[k],
+    set:    v => { D[k] = NORMALIZAR[k] ? NORMALIZAR[k](v) : v; },
+    padrao: k === 'cartoes' ? ((v, p) => cartoesPadrao(v)) : padraoGenerico(k),
+    merge:  mergeGenerico
+  })));
+
+  // ── gravação com controle de versão ─────────────────────────────────
+  async function gravar(id, chave, dados, versaoAntiga) {
+    const agora = new Date().toISOString();
+    try {
+      if (versaoAntiga === null) {
+        const { error } = await syncClient.from('app_state').insert({
+          profile_id: id, chave: chave, dados: dados, device_id: deviceId, updated_at: agora, versao: 1
+        });
+        if (error) return (error.code === '23505' || /duplicate/i.test(error.message || '')) ? { conflito: true } : { erro: error.message };
+        return { versao: 1 };
+      }
+      const { data, error } = await syncClient.from('app_state').update({
+        dados: dados, device_id: deviceId, updated_at: agora, versao: Number(versaoAntiga) + 1
+      }).eq('profile_id', id).eq('chave', chave).eq('versao', versaoAntiga).select('versao');
+      if (error) return { erro: error.message };
+      if (!data || !data.length) return { conflito: true };
+      return { versao: data[0].versao };
+    } catch(e) { return { erro: e.message }; }
   }
 
-  function mesmoInstante(a, b) {
-    return !!a && !!b && new Date(a).getTime() === new Date(b).getTime();
+  async function reconciliarChave(cfg, p, id, verRemota) {
+    const kVer  = 'cfm-sync-' + cfg.chave + '-ver-'  + p;
+    const kBase = 'cfm-sync-' + cfg.chave + '-base-' + p;
+
+    if (cfg.preparar && cfg.preparar()) salvarLocal(p);
+    const C        = cfg.c || canon;
+    const local    = cfg.get();
+    const baseStr  = localStorage.getItem(kBase);
+    const base     = baseStr === null ? undefined : JSON.parse(baseStr);
+    const verLocal = localStorage.getItem(kVer);
+
+    const remotoExiste = verRemota !== undefined;
+    const remotoMudou  = remotoExiste && String(verRemota) !== verLocal;
+    const primeira     = base === undefined;
+    const localMudou   = primeira ? !cfg.padrao(local, p) : C(local) !== C(base);
+    if (!remotoMudou && !localMudou) return 'igual';
+
+    let merged = local, remotoDados, verFinal = remotoExiste ? verRemota : null;
+    if (remotoMudou) {
+      const { data: rem, error } = await syncClient.from('app_state')
+        .select('dados, versao').eq('profile_id', id).eq('chave', cfg.chave).maybeSingle();
+      if (error || !rem) { console.warn('⚠️ Sync (' + cfg.chave + ') ler:', error ? error.message : 'sem dados'); return 'erro'; }
+      if (perfilAtivo() !== p) return 'perfil';
+      remotoDados = rem.dados;
+      verFinal    = rem.versao;
+      let localEf = local;
+      if (primeira) {
+        if (cfg.padrao(local, p)) localEf = cfg.vazio();
+        else if (cfg.aoPrimeira) cfg.aoPrimeira(local, remotoDados);
+      }
+      merged = cfg.merge(base, clone(localEf), clone(remotoDados));
+    }
+
+    const mc      = C(merged);
+    const aplicar = mc !== C(local);
+    const empurrar = !remotoExiste || (remotoMudou ? mc !== C(remotoDados) : localMudou);
+
+    if (aplicar) {
+      if (primeira && !cfg.padrao(local, p)) guardarBackup(cfg.chave, p, local);
+      cfg.set(merged);
+      salvarLocal(p);
+      renderPendente = true;
+    }
+    if (empurrar) {
+      const res = await gravar(id, cfg.chave, cfg.get(), remotoExiste ? verFinal : null);
+      if (res.erro)     { console.error('❌ Sync (' + cfg.chave + ') gravar:', res.erro); return 'erro'; }
+      if (res.conflito) { console.warn('⚠️ Sync (' + cfg.chave + '): alterado por outro aparelho no meio — refazendo'); return 'conflito'; }
+      verFinal = res.versao;
+      console.log('✅ Sync: ' + cfg.chave + ' enviado (v' + verFinal + ')');
+    } else if (aplicar) {
+      console.log('✅ Sync: ' + cfg.chave + ' atualizado do Supabase (v' + verFinal + ')');
+    }
+    try {
+      localStorage.setItem(kVer, String(verFinal));
+      localStorage.setItem(kBase, JSON.stringify(cfg.get()));
+    } catch(e) {   // sem espaço: sem a base a próxima junção trata como 1ª sincronização (não perde dados)
+      try { localStorage.removeItem(kBase); localStorage.removeItem(kVer); } catch(e2) {}
+      console.warn('⚠️ Sync (' + cfg.chave + '): armazenamento cheio, base não guardada');
+    }
+    return aplicar ? 'aplicado' : 'ok';
   }
 
-  function agendarCartoes() {
-    if (timerCartoes) clearTimeout(timerCartoes);
-    timerCartoes = setTimeout(reconciliarCartoes, 1500);
-  }
-
-  async function reconciliarCartoes() {
+  async function reconciliar() {
     if (!syncClient || !navigator.onLine) return;
-    if (syncingCartoes) { pendenteCartoes = true; return; }
-    if (typeof D === 'undefined' || !D || !Array.isArray(D.cartoes)) return;
+    if (syncing) { pendente = true; return; }
+    if (typeof D === 'undefined' || !D || !D.lanc || !Array.isArray(D.contas) || !Array.isArray(D.cartoes)) return;  // perfil ainda não carregado
     const p  = perfilAtivo();
     const id = PROFILE_IDS[p];
     if (!id) return;
 
-    syncingCartoes = true;
+    syncing = true;
+    renderPendente = false;
+    let refazer = false;
     try {
-      const kTs   = 'cfm-cartoes-ts-'   + p;
-      const kSnap = 'cfm-cartoes-snap-' + p;
-      const localTs = localStorage.getItem(kTs);
-      const snap    = localStorage.getItem(kSnap);
-      const atual   = JSON.stringify(D.cartoes);
+      const { data: vers, error } = await syncClient.from('app_state').select('chave, versao').eq('profile_id', id);
+      if (error) { console.warn('⚠️ Sync (versões):', error.message); return; }
+      if (perfilAtivo() !== p) { refazer = true; return; }
+      const remotas = {};
+      (vers || []).forEach(v => { remotas[v.chave] = v.versao; });
 
-      const { data: remoto, error } = await syncClient
-        .from('app_state').select('dados, updated_at')
-        .eq('profile_id', id).eq('chave', 'cartoes').maybeSingle();
-      if (error) { console.warn('⚠️ Cartões (ler):', error.message); return; }
-      if (perfilAtivo() !== p) { pendenteCartoes = true; return; } // trocou de perfil no meio
-
-      const remotoMudou = !!remoto && !mesmoInstante(remoto.updated_at, localTs);
-      const localMudou  = snap === null ? !cartoesPadraoVazios(D.cartoes) : atual !== snap;
-
-      if (remotoMudou && !(localMudou && localTs)) {
-        // ── baixar ──
-        if (localMudou) { // primeira sincronização deste aparelho: guarda cópia de segurança
-          try {
-            const kBk = 'cfm-backup-cartoes-primeira-' + p;
-            if (!localStorage.getItem(kBk))
-              localStorage.setItem(kBk, JSON.stringify({ em: new Date().toISOString(), cartoes: D.cartoes }));
-          } catch(e) {}
-        }
-        if (!Array.isArray(remoto.dados)) return;
-        D.cartoes = normalizarCartoes(remoto.dados);
-        try { localStorage.setItem('cfm-v4-' + p, JSON.stringify(D)); } catch(e) { console.warn('⚠️ Cartões: armazenamento cheio'); return; }
-        localStorage.setItem(kTs, remoto.updated_at);
-        localStorage.setItem(kSnap, JSON.stringify(D.cartoes));
-        console.log('✅ Cartões baixados do Supabase:', D.cartoes.length, 'cartão(ões)');
-        if (typeof render === 'function') { try { render(); } catch(e) { console.warn('⚠️ render:', e.message); } }
-      } else if (localMudou) {
-        // ── enviar ──
-        if (remotoMudou) console.warn('⚠️ Cartões alterados nos dois aparelhos — versão local prevalece');
-        const { data: gravado, error: e2 } = await syncClient.from('app_state').upsert({
-          profile_id: id, chave: 'cartoes', dados: JSON.parse(atual),
-          device_id: deviceId, updated_at: new Date().toISOString()
-        }, { onConflict: 'profile_id,chave' }).select('updated_at').single();
-        if (e2) { console.error('❌ Cartões (enviar):', e2.message); return; }
-        localStorage.setItem(kTs, gravado.updated_at);
-        localStorage.setItem(kSnap, atual);
-        console.log('✅ Cartões enviados ao Supabase:', D.cartoes.length, 'cartão(ões)');
+      for (const cfg of CHAVES) {
+        if (cfg.get() === undefined) continue;   // parte inexistente neste perfil
+        const r = await reconciliarChave(cfg, p, id, remotas[cfg.chave]);
+        if (r === 'perfil')    { refazer = true; break; }
+        if (r === 'conflito')  { refazer = true; }
+      }
+      ultimaSync = Date.now();
+      if (refazer) { conflitosSeguidos++; } else { conflitosSeguidos = 0; }
+      if (renderPendente && typeof render === 'function') {
+        try { render(); } catch(e) { console.warn('⚠️ render:', e.message); }
       }
     } catch(e) {
-      console.error('❌ Erro sync cartões:', e.message);
+      console.error('❌ Erro sync:', e.message);
     } finally {
-      syncingCartoes = false;
-      if (pendenteCartoes) { pendenteCartoes = false; setTimeout(reconciliarCartoes, 500); }
+      syncing = false;
+      if ((pendente || refazer) && conflitosSeguidos < 6) { pendente = false; setTimeout(reconciliar, 700); }
+      else pendente = false;
     }
   }
 
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) reconciliarCartoes(); });
-  window.addEventListener('online', () => reconciliarCartoes());
+  function agendar() {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(reconciliar, 1500);
+  }
 
-  // ── API pública ──────────────────────────────────────────────────────
-  window.CFMSyncCartoes = () => reconciliarCartoes();
-  // Chamado quando o usuário troca de perfil
+  // ── boot ────────────────────────────────────────────────────────────
+  function hookPersistir() {
+    const orig = window.persistir;
+    window.persistir = function() {
+      if (orig) orig.call(this);
+      agendar();
+    };
+    console.log('🔗 Hook persistir() instalado');
+  }
+
+  function iniciarPolling() {
+    if (pollingInterval) clearInterval(pollingInterval);
+    reconciliar();
+    pollingInterval = setInterval(reconciliar, 15000);
+    console.log('📡 Polling ativo (15s)');
+  }
+
+  function iniciarSync() {
+    if (!window.supabase) { console.error('❌ Supabase CDN não carregou'); return; }
+    syncClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    window.cfmSyncClient = syncClient;
+    console.log('✅ CFM Sync v3 iniciado');
+    hookPersistir();
+    iniciarPolling();
+  }
+
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) reconciliar(); });
+  window.addEventListener('online', () => reconciliar());
+
+  // ── API pública ─────────────────────────────────────────────────────
   window.CFMSyncTrocarPerfil = function(novoPerfil) {
     console.log('🔄 Sync: trocando para', novoPerfil);
-    ultimoSync = 0;
+    conflitosSeguidos = 0;
     iniciarPolling();
   };
-  window.CFMSyncAgora  = () => sincronizar();
-  window.CFMSyncStatus = () => ({
+  window.CFMSyncAgora   = () => reconciliar();
+  window.CFMSyncCartoes = () => reconciliar();
+  window.CFMSyncStatus  = () => ({
     online: navigator.onLine, perfil: perfilAtivo(),
-    syncing, ultimoSync: new Date(ultimoSync).toLocaleTimeString('pt-BR')
+    syncing, ultimaSync: new Date(ultimaSync).toLocaleTimeString('pt-BR')
   });
 
   if (document.readyState === 'loading') {
@@ -2446,7 +2582,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
     setTimeout(iniciarSync, 800);
   }
 
-  console.log('✅ CFM Sync v2 carregado');
+  console.log('✅ CFM Sync v3 carregado');
 })();
 </script>
 
