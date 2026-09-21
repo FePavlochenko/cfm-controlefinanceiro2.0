@@ -100,7 +100,7 @@ tailwind.config={theme:{extend:{
 <div id="app" class="hidden flex min-h-screen">
   <aside class="hidden md:flex flex-col w-64 bg-white border-r border-gray-100 p-4 sticky top-0 h-screen shrink-0 overflow-y-auto">
     <div class="flex items-center justify-between px-2 mb-2 mt-1">
-      <div class="flex items-center space-x-2"><div class="w-9 h-9 rounded-xl bg-mata text-manga flex items-center justify-center font-extrabold">C</div>
+      <div class="flex items-center space-x-2"><img src="/icon-192.png" alt="CFM" class="w-9 h-9 rounded-xl object-cover shadow shrink-0">
         <div><p class="font-extrabold leading-none text-sm">CFM</p><p class="text-[10px] text-gray-400 leading-tight">Controle Financeiro</p></div></div>
       <button onclick="voltarPerfil()" title="Trocar perfil" class="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-400 hover:text-mata text-xs"><i class="fas fa-right-left"></i></button>
     </div>
@@ -116,7 +116,7 @@ tailwind.config={theme:{extend:{
   <div class="flex-1 flex flex-col min-w-0 overflow-x-hidden">
     <header class="bg-mata text-papel px-4 md:px-8 pb-5 shadow-md sticky top-0 z-20 rounded-b-[24px] md:rounded-none" style="padding-top:calc(1rem + env(safe-area-inset-top))">
       <div class="flex justify-between items-center mb-3 max-w-5xl mx-auto">
-        <div class="flex items-center space-x-2 md:hidden"><div class="w-8 h-8 rounded-lg bg-white/10 text-manga flex items-center justify-center font-extrabold text-sm">C</div><span class="font-bold text-sm" id="titulo-mobile">CFM</span></div>
+        <div class="flex items-center space-x-2 md:hidden"><img src="/icon-192.png" alt="CFM" class="w-8 h-8 rounded-lg object-cover shadow shrink-0"><span class="font-bold text-sm" id="titulo-mobile">CFM</span></div>
         <div class="hidden md:block font-bold text-lg" id="titulo-aba">Resumo</div>
         <div class="flex items-center space-x-4">
           <button onclick="mudarMes(-1)" class="opacity-70 hover:opacity-100 text-sm"><i class="fas fa-chevron-left"></i></button>
@@ -124,7 +124,6 @@ tailwind.config={theme:{extend:{
           <button onclick="mudarMes(1)" class="opacity-70 hover:opacity-100 text-sm"><i class="fas fa-chevron-right"></i></button>
         </div>
         <div class="flex items-center gap-2">
-          <img src="/icon-192.png" alt="CFM" class="w-8 h-8 rounded-lg object-cover shadow shrink-0">
           <button onclick="voltarPerfil()" class="md:hidden w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center text-xs"><i class="fas fa-right-left"></i></button>
         </div>
       </div>
@@ -153,7 +152,7 @@ tailwind.config={theme:{extend:{
             <div id="ranking-cat" class="space-y-3"></div>
             <p id="ranking-vazio" class="hidden text-xs text-gray-400 py-4 text-center">Nenhuma despesa neste mês.</p></div>
           <div class="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm">
-            <div class="flex justify-between items-center mb-3"><h3 class="font-bold text-sm flex items-center space-x-2"><i class="fas fa-list text-manga"></i><span>Lançamentos</span></h3>
+            <div class="flex justify-between items-center mb-3"><h3 onclick="abrirTelaLancamentos()" class="font-bold text-sm flex items-center space-x-2 cursor-pointer hover:text-folha" title="Ver todos os lançamentos"><i class="fas fa-list text-manga"></i><span>Lançamentos</span><i class="fas fa-expand text-[10px] text-gray-300"></i></h3>
               <label class="text-xs text-folha font-semibold cursor-pointer flex items-center space-x-1" title="Importar extrato OFX/CSV (receitas e despesas)"><i class="fas fa-file-import"></i><span>OFX/CSV</span><input type="file" accept=".ofx,.csv,.qfx" onchange="importarArquivo(event,false,'')" class="hidden"></label></div>
             <div id="lista-lanc" class="divide-y divide-gray-50 max-h-72 overflow-y-auto"></div>
             <p id="lanc-vazio" class="hidden text-xs text-gray-400 py-4 text-center">Nenhum lançamento.</p></div>
@@ -298,6 +297,19 @@ tailwind.config={theme:{extend:{
   </div>
 </div>
 
+<!-- TELA LANÇAMENTOS (todos) -->
+<div id="tela-lancamentos" class="hidden fixed inset-0 bg-papel z-50 flex flex-col" style="padding-top:env(safe-area-inset-top)">
+  <div class="bg-mata text-papel px-4 py-3 shadow-md flex items-center gap-3 shrink-0">
+    <button onclick="fecharTelaLancamentos()" class="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center"><i class="fas fa-arrow-left"></i></button>
+    <h3 class="font-bold text-base flex-1">Lançamentos</h3>
+    <select id="tela-lanc-mes" onchange="selecionarMesTela(this.value)" class="bg-white/10 text-papel text-sm rounded-lg py-1.5 px-2 border border-white/20"></select>
+  </div>
+  <div class="flex-1 overflow-y-auto px-4 py-3 max-w-3xl w-full mx-auto">
+    <div id="lista-lanc-tela" class="divide-y divide-gray-50"></div>
+    <p id="lanc-tela-vazio" class="hidden text-xs text-gray-400 py-8 text-center">Nenhum lançamento neste período.</p>
+  </div>
+</div>
+
 <!-- MODAL LANÇAMENTO -->
 <div id="modal" class="hidden fixed inset-0 bg-black/50 z-40 flex items-end" onclick="if(event.target===this)fecharModal()">
   <div class="bg-papel w-full rounded-t-3xl shadow-2xl" style="padding:1.25rem 1.25rem calc(1.5rem + env(safe-area-inset-bottom));max-height:92vh;overflow-y:auto">
@@ -309,7 +321,7 @@ tailwind.config={theme:{extend:{
     <input id="inp-desc" type="text" placeholder="Descrição" class="w-full bg-white border border-gray-200 rounded-xl py-2.5 px-4 mb-3 focus:outline-none focus:ring-2 focus:ring-folha">
     <div class="grid grid-cols-2 gap-3 mb-3">
       <input id="inp-valor" type="number" step="0.01" min="0" placeholder="Valor (R$)" class="valor w-full bg-white border border-gray-200 rounded-xl py-2.5 px-4 focus:outline-none focus:ring-2 focus:ring-folha">
-      <input id="inp-data" type="date" class="w-full bg-white border border-gray-200 rounded-xl py-2.5 px-4 focus:outline-none focus:ring-2 focus:ring-folha">
+      <input id="inp-data" type="date" onclick="this.showPicker&&this.showPicker()" class="w-full bg-white border border-gray-200 rounded-xl py-2.5 px-4 focus:outline-none focus:ring-2 focus:ring-folha">
     </div>
     <label class="flex items-center justify-between bg-white border border-gray-200 rounded-xl py-2.5 px-4 mb-3 text-sm text-gray-600 cursor-pointer"><span>Já realizada (paga/recebida)?</span><input id="inp-realizada" type="checkbox" checked class="w-4 h-4 accent-folha"></label>
     <div class="grid grid-cols-2 gap-3 mb-3">
@@ -577,7 +589,7 @@ function render(){
   document.getElementById('vg-desp').textContent=fmt(desp);
   const r=document.getElementById('vg-res');r.textContent=fmt(rec-desp);r.className='valor font-bold text-sm '+(rec-desp<0?'text-goiaba':'text-folha');
   document.getElementById('vg-qtd').textContent=getLanc().length;
-  renderRanking(desp);renderLancamentos();renderContas();renderCartoes();renderRelatorios(rec,desp);
+  renderRanking(desp);renderLancamentos();renderTelaLancamentos();renderContas();renderCartoes();renderRelatorios(rec,desp);
   renderOrcamentos();renderReserva();renderDividas();renderSistemas();renderConfig();renderCalendario();
   document.getElementById('inp-conta').innerHTML=
     D.contas.map(c=>`<option value="conta:${c.nome}">${c.nome}</option>`).join('')+
@@ -680,6 +692,43 @@ function renderLancamentos(){
   }).join('');
   document.getElementById('lanc-vazio').classList.toggle('hidden',itens.length>0);
 }
+function linhaLancTelaHTML(l,idx){
+  const cta=D.contas.find(c=>c.nome===l.conta)||{cor:'bg-gray-400',sigla:'?'};
+  return `<div class="flex items-center py-2.5 gap-2 ${l.realizada===false?'opacity-60':''}">
+    <div class="flex justify-between items-center flex-1 min-w-0">
+      <div class="flex items-center space-x-2 min-w-0">${iconeBadge(cta,'w-7 h-7','text-[10px]')}
+        <div class="min-w-0"><p class="text-sm font-medium text-gray-700 truncate">${l.desc}${l.realizada===false?` <button onclick="marcarRealizada(${idx})" class="ml-1 text-[9px] font-bold text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-1.5 py-0.5 align-middle">Pendente</button>`:''}</p>
+        <p class="text-[11px] text-gray-400 truncate">${l.data?'<span class="font-mono text-gray-500">'+fmtData(l.data)+'</span> · ':''}${l.cat}${l.sub?' › '+l.sub:''}${l.cartao?' · 💳 '+l.cartao:''}${l.conta?' · '+l.conta:''}</p></div></div>
+      <div class="flex items-center space-x-2 ml-2 shrink-0"><span class="valor text-sm font-semibold ${l.tipo==='despesa'?'text-goiaba':'text-folha'}">${l.tipo==='despesa'?'−':'+'} ${fmt(l.valor)}</span>
+        <button onclick="editarLancInline(${idx})" class="text-gray-300 hover:text-folha text-xs"><i class="fas fa-pen"></i></button>
+        <button onclick="excluirLancamento(${idx})" class="text-gray-300 hover:text-goiaba text-xs"><i class="fas fa-trash"></i></button></div>
+    </div>
+  </div>`;
+}
+function abrirTelaLancamentos(){
+  document.getElementById('tela-lanc-mes').innerHTML=MESES.map((m,i)=>`<option value="${i}" ${i===mesAtual?'selected':''}>${m}</option>`).join('');
+  document.getElementById('tela-lancamentos').classList.remove('hidden');
+  renderTelaLancamentos();
+}
+function fecharTelaLancamentos(){
+  document.getElementById('tela-lancamentos').classList.add('hidden');
+}
+function selecionarMesTela(v){
+  mesAtual=parseInt(v);
+  if(!(mesAtual in D.inicial))D.inicial[mesAtual]=0;
+  if(!(mesAtual in D.previsto))D.previsto[mesAtual]=0;
+  persistir();render();
+}
+function renderTelaLancamentos(){
+  const tela=document.getElementById('tela-lancamentos');
+  if(!tela||tela.classList.contains('hidden'))return;
+  const sel=document.getElementById('tela-lanc-mes');
+  if(sel)sel.value=String(mesAtual);
+  const itens=getLanc().map((l,idx)=>({l,idx})).sort((a,b)=>(b.l.data||'').localeCompare(a.l.data||''));
+  const lista=document.getElementById('lista-lanc-tela');
+  lista.innerHTML=itens.map(({l,idx})=>linhaLancTelaHTML(l,idx)).join('');
+  document.getElementById('lanc-tela-vazio').classList.toggle('hidden',itens.length>0);
+}
 function marcarRealizada(idx){const l=getLanc()[idx];if(l){l.realizada=true;persistir();render();toast('Marcado como realizado');}}
 function toggleSelecionarTodos(checked){
   document.querySelectorAll('.chk-lanc').forEach(c=>c.checked=checked);
@@ -706,7 +755,8 @@ function excluirSelecionados(){
 // ===== EDITAR LANÇAMENTO INLINE =====
 function editarLancInline(idx){
   const l=getLanc()[idx];
-  const lista=document.getElementById('lista-lanc');
+  const telaAberta=!document.getElementById('tela-lancamentos').classList.contains('hidden');
+  const lista=document.getElementById(telaAberta?'lista-lanc-tela':'lista-lanc');
   const cats=catsDoTipo(l.tipo);
   const cat=cats.find(c=>c.nome===l.cat);
   const div=document.createElement('div');
@@ -715,7 +765,7 @@ function editarLancInline(idx){
     <input id="el-desc" value="${l.desc.replace(/"/g,'&quot;')}" class="w-full bg-white border border-gray-200 rounded-lg py-1.5 px-2 text-sm mb-2">
     <div class="grid grid-cols-2 gap-2 mb-2">
       <input id="el-valor" type="number" step="0.01" value="${l.valor}" class="valor bg-white border border-gray-200 rounded-lg py-1.5 px-2 text-sm">
-      <input id="el-data" type="date" value="${l.data||''}" class="bg-white border border-gray-200 rounded-lg py-1.5 px-2 text-sm">
+      <input id="el-data" type="date" value="${l.data||''}" onclick="this.showPicker&&this.showPicker()" class="bg-white border border-gray-200 rounded-lg py-1.5 px-2 text-sm">
     </div>
     <div class="grid grid-cols-2 gap-2 mb-2">
       <select id="el-conta" class="bg-white border border-gray-200 rounded-lg py-1.5 px-2 text-sm">${D.contas.map(c=>`<option ${c.nome===l.conta?'selected':''}>${c.nome}</option>`).join('')}</select>
@@ -950,7 +1000,7 @@ function abrirLancCartao(ci){
     <input id="lc-desc-${ci}" placeholder="Descrição" class="w-full bg-white border border-gray-200 rounded-lg py-1.5 px-2 text-sm mb-2">
     <div class="grid grid-cols-2 gap-2 mb-2">
       <input id="lc-valor-${ci}" type="number" step="0.01" placeholder="Valor R$" class="valor bg-white border border-gray-200 rounded-lg py-1.5 px-2 text-sm">
-      <input id="lc-data-${ci}" type="date" value="${ano}-${mes}-${dia}" class="bg-white border border-gray-200 rounded-lg py-1.5 px-2 text-sm">
+      <input id="lc-data-${ci}" type="date" value="${ano}-${mes}-${dia}" onclick="this.showPicker&&this.showPicker()" class="bg-white border border-gray-200 rounded-lg py-1.5 px-2 text-sm">
     </div>
     <select id="lc-cat-${ci}" onchange="atualizarLcSub(${ci})" class="w-full bg-white border border-gray-200 rounded-lg py-1.5 px-2 text-sm mb-2">
       <option value="">— categoria (opcional) —</option>
@@ -1040,10 +1090,18 @@ function confirmarPagarFatura(ci){
     cat:'💳 Cartão',sub:'',cartao:'',
     data:new Date().toISOString().slice(0,10)
   });
-  // limpa lançamentos internos do cartão após pagamento
-  D.cartoes[ci].lancamentos=[];
+  // abate o valor pago dos lançamentos pendentes do cartão (do mais antigo pro mais novo, com parcial na última entrada)
+  if(!D.cartoes[ci].lancamentos)D.cartoes[ci].lancamentos=[];
+  let restante=valor;
+  const nova=[];
+  D.cartoes[ci].lancamentos.forEach(l=>{
+    if(restante<=0.001){nova.push(l);return;}
+    if(restante>=l.valor-0.005){restante=+(restante-l.valor).toFixed(2);}
+    else{nova.push(Object.assign({},l,{valor:+(l.valor-restante).toFixed(2)}));restante=0;}
+  });
+  D.cartoes[ci].lancamentos=nova;
   persistir();render();
-  toast('Fatura de '+fmt(valor)+' debitada de '+conta);
+  toast('Fatura: '+fmt(valor)+' debitado de '+conta+(nova.length?' — saldo restante na fatura.':' — fatura quitada.'));
 }
 
 // ===== ORÇAMENTOS =====
