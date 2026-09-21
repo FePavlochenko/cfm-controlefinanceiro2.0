@@ -2142,6 +2142,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
     const orig = window.persistir;
     window.persistir = function() {
       if (orig) orig.call(this);
+      agendarCartoes(); // cartões sincronizam por conta própria (app_state)
       const agora = Date.now();
       if (agora - ultimoSync < 2000) return; // debounce 2s
       sincronizar();
@@ -2230,6 +2231,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
     ultimoUpdatedAt = null;
 
     async function checar() {
+      reconciliarCartoes(); // cartões (app_state) — independente das transações
       if (!syncClient || !navigator.onLine || syncing) return;
       try {
         const p  = perfilAtivo();
@@ -2312,7 +2314,120 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){fecharModal();docum
     }
   }
 
+  // ── cartões: D.cartoes ⇄ Supabase (tabela app_state, chave 'cartoes') ──
+  // Os cartões (com a lista de lançamentos de cada um) não cabem nas tabelas
+  // transactions/accounts, então vão inteiros como JSON, um registro por perfil.
+  // Regras:
+  //  • estado sincronizado por aparelho: cfm-cartoes-ts-<perfil> (updated_at) e
+  //    cfm-cartoes-snap-<perfil> (JSON do último estado enviado/recebido)
+  //  • aparelho que nunca sincronizou e só tem o cartão padrão vazio NÃO envia
+  //    (evita apagar no Supabase os dados de outro aparelho)
+  //  • aparelho que nunca sincronizou e tem dados, com registro já existente no
+  //    Supabase: baixa o remoto, guardando antes uma cópia local de segurança
+  //  • mudou só o remoto → baixa; mudou só o local → envia; mudou os dois → local vence
+  let syncingCartoes   = false;
+  let pendenteCartoes  = false;
+  let timerCartoes     = null;
+  const deviceId = (function() {
+    try {
+      let d = localStorage.getItem('cfm-device-id');
+      if (!d) { d = 'dev-' + Math.random().toString(36).slice(2, 10); localStorage.setItem('cfm-device-id', d); }
+      return d;
+    } catch(e) { return 'dev-anon'; }
+  })();
+
+  function cartoesPadraoVazios(arr) {
+    if (!Array.isArray(arr) || arr.length === 0) return true;
+    if (arr.length > 1) return false;
+    const c = arr[0] || {};
+    return c.nome === 'Nubank' && !(c.lancamentos && c.lancamentos.length) &&
+           !c.fechamento && !c.logo && Number(c.limite) === 5000 && c.cor === 'bg-purple-700';
+  }
+
+  function normalizarCartoes(arr) {
+    arr.forEach(c => {
+      if (c.logo === undefined) c.logo = '';
+      if (c.fechamento === undefined) c.fechamento = '';
+      if (c.lancamentos === undefined) c.lancamentos = [];
+    });
+    return arr;
+  }
+
+  function mesmoInstante(a, b) {
+    return !!a && !!b && new Date(a).getTime() === new Date(b).getTime();
+  }
+
+  function agendarCartoes() {
+    if (timerCartoes) clearTimeout(timerCartoes);
+    timerCartoes = setTimeout(reconciliarCartoes, 1500);
+  }
+
+  async function reconciliarCartoes() {
+    if (!syncClient || !navigator.onLine) return;
+    if (syncingCartoes) { pendenteCartoes = true; return; }
+    if (typeof D === 'undefined' || !D || !Array.isArray(D.cartoes)) return;
+    const p  = perfilAtivo();
+    const id = PROFILE_IDS[p];
+    if (!id) return;
+
+    syncingCartoes = true;
+    try {
+      const kTs   = 'cfm-cartoes-ts-'   + p;
+      const kSnap = 'cfm-cartoes-snap-' + p;
+      const localTs = localStorage.getItem(kTs);
+      const snap    = localStorage.getItem(kSnap);
+      const atual   = JSON.stringify(D.cartoes);
+
+      const { data: remoto, error } = await syncClient
+        .from('app_state').select('dados, updated_at')
+        .eq('profile_id', id).eq('chave', 'cartoes').maybeSingle();
+      if (error) { console.warn('⚠️ Cartões (ler):', error.message); return; }
+      if (perfilAtivo() !== p) { pendenteCartoes = true; return; } // trocou de perfil no meio
+
+      const remotoMudou = !!remoto && !mesmoInstante(remoto.updated_at, localTs);
+      const localMudou  = snap === null ? !cartoesPadraoVazios(D.cartoes) : atual !== snap;
+
+      if (remotoMudou && !(localMudou && localTs)) {
+        // ── baixar ──
+        if (localMudou) { // primeira sincronização deste aparelho: guarda cópia de segurança
+          try {
+            const kBk = 'cfm-backup-cartoes-primeira-' + p;
+            if (!localStorage.getItem(kBk))
+              localStorage.setItem(kBk, JSON.stringify({ em: new Date().toISOString(), cartoes: D.cartoes }));
+          } catch(e) {}
+        }
+        if (!Array.isArray(remoto.dados)) return;
+        D.cartoes = normalizarCartoes(remoto.dados);
+        try { localStorage.setItem('cfm-v4-' + p, JSON.stringify(D)); } catch(e) { console.warn('⚠️ Cartões: armazenamento cheio'); return; }
+        localStorage.setItem(kTs, remoto.updated_at);
+        localStorage.setItem(kSnap, JSON.stringify(D.cartoes));
+        console.log('✅ Cartões baixados do Supabase:', D.cartoes.length, 'cartão(ões)');
+        if (typeof render === 'function') { try { render(); } catch(e) { console.warn('⚠️ render:', e.message); } }
+      } else if (localMudou) {
+        // ── enviar ──
+        if (remotoMudou) console.warn('⚠️ Cartões alterados nos dois aparelhos — versão local prevalece');
+        const { data: gravado, error: e2 } = await syncClient.from('app_state').upsert({
+          profile_id: id, chave: 'cartoes', dados: JSON.parse(atual),
+          device_id: deviceId, updated_at: new Date().toISOString()
+        }, { onConflict: 'profile_id,chave' }).select('updated_at').single();
+        if (e2) { console.error('❌ Cartões (enviar):', e2.message); return; }
+        localStorage.setItem(kTs, gravado.updated_at);
+        localStorage.setItem(kSnap, atual);
+        console.log('✅ Cartões enviados ao Supabase:', D.cartoes.length, 'cartão(ões)');
+      }
+    } catch(e) {
+      console.error('❌ Erro sync cartões:', e.message);
+    } finally {
+      syncingCartoes = false;
+      if (pendenteCartoes) { pendenteCartoes = false; setTimeout(reconciliarCartoes, 500); }
+    }
+  }
+
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) reconciliarCartoes(); });
+  window.addEventListener('online', () => reconciliarCartoes());
+
   // ── API pública ──────────────────────────────────────────────────────
+  window.CFMSyncCartoes = () => reconciliarCartoes();
   // Chamado quando o usuário troca de perfil
   window.CFMSyncTrocarPerfil = function(novoPerfil) {
     console.log('🔄 Sync: trocando para', novoPerfil);
